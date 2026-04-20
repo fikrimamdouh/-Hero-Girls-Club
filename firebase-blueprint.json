@@ -1,0 +1,148 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Parent user profile",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["parent", "child"] },
+        "displayName": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["uid", "email", "role", "displayName", "createdAt"]
+    },
+    "ChildProfile": {
+      "title": "ChildProfile",
+      "description": "Profile for a child",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "parentId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "pin": { "type": "string" },
+        "points": { "type": "number" },
+        "level": { "type": "number" },
+        "heroName": { "type": "string" },
+        "heroPower": { "type": "string" },
+        "heroBadge": { "type": "string" },
+        "avatar": { "type": "object" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["uid", "parentId", "name", "pin", "points", "level", "status", "createdAt"]
+    },
+    "Mission": {
+      "title": "Mission",
+      "description": "A task for a child",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "points": { "type": "number" },
+        "type": { "type": "string", "enum": ["daily", "custom"] },
+        "isApproved": { "type": "boolean" },
+        "isCompleted": { "type": "boolean" },
+        "childId": { "type": "string" },
+        "parentId": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "completedAt": { "type": "number" }
+      },
+      "required": ["id", "title", "points", "type", "isApproved", "isCompleted", "childId", "parentId", "createdAt"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Log of child activities",
+      "type": "object",
+      "properties": {
+        "childId": { "type": "string" },
+        "childName": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["mission", "story", "achievement"] },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["childId", "childName", "message", "type", "timestamp"]
+    },
+    "ChatSession": {
+      "title": "ChatSession",
+      "description": "A chat conversation",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "lastMessage": { "type": "object" },
+        "unreadCount": { "type": "object" },
+        "updatedAt": { "type": "number" },
+        "type": { "type": "string", "enum": ["direct", "group"] },
+        "name": { "type": "string" }
+      },
+      "required": ["participants", "updatedAt", "type"]
+    },
+    "DirectMessage": {
+      "title": "DirectMessage",
+      "description": "A message in a chat",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "readBy": { "type": "array", "items": { "type": "string" } },
+        "reactions": { "type": "object" },
+        "replyTo": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "voiceUrl": { "type": "string" }
+      },
+      "required": ["chatId", "senderId", "text", "timestamp"]
+    },
+    "FriendRequest": {
+      "title": "FriendRequest",
+      "description": "Friendship request between children",
+      "type": "object",
+      "properties": {
+        "fromId": { "type": "string" },
+        "fromName": { "type": "string" },
+        "fromHeroName": { "type": "string" },
+        "toId": { "type": "string" },
+        "toName": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["fromId", "toId", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": { "$ref": "User" },
+      "description": "Parent users"
+    },
+    "/children_profiles/{uid}": {
+      "schema": { "$ref": "ChildProfile" },
+      "description": "Children profiles"
+    },
+    "/missions/{id}": {
+      "schema": { "$ref": "Mission" },
+      "description": "Missions for children"
+    },
+    "/activity_logs/{id}": {
+      "schema": { "$ref": "ActivityLog" },
+      "description": "Activity logs"
+    },
+    "/chats/{id}": {
+      "schema": { "$ref": "ChatSession" },
+      "description": "Chat sessions"
+    },
+    "/direct_messages/{id}": {
+      "schema": { "$ref": "DirectMessage" },
+      "description": "Direct messages"
+    },
+    "/friend_requests/{id}": {
+      "schema": { "$ref": "FriendRequest" },
+      "description": "Friend requests"
+    }
+  }
+}
