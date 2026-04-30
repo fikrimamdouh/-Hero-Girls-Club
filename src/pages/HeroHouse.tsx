@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import JitsiCallEmbed from '../components/JitsiCallEmbed';
 import {
   Send, LogOut, Camera, Palette, Wand2, Plus, Trash2, Gamepad2,
   X, Minus, RotateCw, Shirt, Save, Check, MessageCircle, Tv2, Music2, VolumeX, Volume2,
@@ -229,7 +230,10 @@ export default function HeroHouse() {
   const [houseSession, setHouseSession] = useState<HouseSession | null>(null);
   const [houseMessages, setHouseMessages] = useState<HouseMessage[]>([]);
   const [showCall, setShowCall] = useState(false);
+  const [callMinimized, setCallMinimized] = useState(false);
+  const [showActionBar, setShowActionBar] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
+  const [showGamePicker, setShowGamePicker] = useState(false);
   const [friends, setFriends] = useState<ChildProfile[]>([]);
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
   const [inviteSending, setInviteSending] = useState(false);
@@ -290,10 +294,6 @@ export default function HeroHouse() {
     }).catch(() => {});
   }, [hostProfile, activeChild]);
 
-  /* Auto-close Jitsi when host ends call */
-  useEffect(() => {
-    if (!houseSession?.callActive) setShowCall(false);
-  }, [houseSession?.callActive]);
 
   /* ─── GROUP VISIT: join/leave (stored in children_profiles.houseConfig.liveSession) ─── */
   useEffect(() => {
@@ -325,7 +325,7 @@ export default function HeroHouse() {
     const unsubSession = onSnapshot(hostRef, snap => {
       if (snap.exists()) {
         const data = snap.data() as ChildProfile;
-        const ls = (data.houseConfig as Record<string, unknown>)?.liveSession;
+        const ls = (data.houseConfig as unknown as Record<string, unknown>)?.liveSession;
         if (ls) setHouseSession(ls as HouseSession);
       }
     }, () => {});
@@ -621,8 +621,67 @@ export default function HeroHouse() {
 
   const handleCloseGame = async () => {
     if (!visitId) return;
+    setShowGamePicker(false);
     if (isLocalVisitMode) setVisit(prev => prev ? { ...prev, gameState: undefined } : prev);
     else await updateDoc(doc(db, 'visit_requests', visitId), { gameState: null }).catch(() => {});
+  };
+
+  const handleStartRPS = async () => {
+    if (!visitId || !activeChild || !visit) return;
+    setShowGamePicker(false);
+    const newGameState = {
+      type: 'rps' as const, board: [] as never[],
+      playerX: visit.fromId, playerO: visit.toId,
+      choiceX: null as null, choiceO: null as null,
+      scores: { X: 0, O: 0 }, round: 1,
+      winner: null as null, isDraw: false, turn: 'X' as const
+    };
+    try {
+      if (isLocalVisitMode) setVisit(prev => prev ? { ...prev, gameState: newGameState } : prev);
+      else await updateDoc(doc(db, 'visit_requests', visitId), { gameState: newGameState });
+      playSound('pop');
+    } catch { toast.error('خطأ في بدء اللعبة'); }
+  };
+
+  const RPS_ICONS: Record<string, string> = { rock: '🪨', paper: '📄', scissors: '✂️' };
+  const RPS_LABELS: Record<string, string> = { rock: 'حجر', paper: 'ورقة', scissors: 'مقص' };
+
+  const handleRPSChoice = async (choice: 'rock' | 'paper' | 'scissors') => {
+    if (!visitId || !activeChild || !visit?.gameState || visit.gameState.type !== 'rps') return;
+    const gs = visit.gameState;
+    const isX = gs.playerX === activeChild.uid;
+    const myChoiceField = isX ? 'choiceX' : 'choiceO';
+    if ((isX ? gs.choiceX : gs.choiceO) && !isLocalVisitMode) return;
+    const wins: Record<string, string> = { rock: 'scissors', paper: 'rock', scissors: 'paper' };
+    const newChoiceX = isX ? choice : gs.choiceX;
+    const newChoiceO = isX ? gs.choiceO : choice;
+    let winner: 'X' | 'O' | 'draw' | null = null;
+    let isDraw = false;
+    const newScores = { ...gs.scores };
+    if (newChoiceX && newChoiceO) {
+      if (newChoiceX === newChoiceO) { isDraw = true; winner = 'draw'; }
+      else if (wins[newChoiceX] === newChoiceO) { winner = 'X'; newScores.X++; }
+      else { winner = 'O'; newScores.O++; }
+    }
+    const nextState = { ...gs, [myChoiceField]: choice, winner, isDraw, scores: newScores };
+    try {
+      if (isLocalVisitMode) setVisit(prev => prev ? { ...prev, gameState: nextState } : prev);
+      else await updateDoc(doc(db, 'visit_requests', visitId), { gameState: nextState });
+      playSound('pop');
+      if (winner && winner !== 'draw') {
+        const myMarker = isX ? 'X' : 'O';
+        toast.success(winner === myMarker ? 'فزتِ! 🎉' : 'فازت صديقتكِ! 👏');
+        playSound('magic');
+      } else if (isDraw) toast.info('تعادل! 🤝');
+    } catch { toast.error('خطأ في اللعب'); }
+  };
+
+  const handleRestartRPS = async () => {
+    if (!visitId || !visit?.gameState || visit.gameState.type !== 'rps') return;
+    const gs = visit.gameState;
+    const nextState = { ...gs, choiceX: null, choiceO: null, winner: null, isDraw: false, round: gs.round + 1 };
+    if (isLocalVisitMode) setVisit(prev => prev ? { ...prev, gameState: nextState } : prev);
+    else await updateDoc(doc(db, 'visit_requests', visitId), { gameState: nextState }).catch(() => {});
   };
 
   /* ─── MAGIC DECORATE ─────────────────────────────────────── */
@@ -674,16 +733,40 @@ export default function HeroHouse() {
     } catch { toast.error('خطأ في إرسال الرسالة'); }
   };
 
-  /* ─── JITSI CALL ────────────────────────────────────────── */
+  /* ─── CALL ─────────────────────────────────────────────── */
+  const jitsiRoomId = `house-${hostProfile?.uid ?? 'unknown'}`;
+  const jitsiDisplayName = activeChild?.heroName || activeChild?.name || 'بطلة';
+
   const handleToggleCall = async () => {
     if (!hostProfile || !isHost) return;
     const newState = !houseSession?.callActive;
-    /* Update liveSession.callActive inside children_profiles (deployed rules) */
     await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
       'houseConfig.liveSession.callActive': newState,
       'houseConfig.liveSession.updatedAt': Date.now()
     }).catch(() => {});
-    toast.success(newState ? 'تم تشغيل مكالمة الفيديو! 📹' : 'تم إنهاء المكالمة');
+    if (newState) {
+      setShowCall(true);
+      setCallMinimized(false);
+    } else {
+      setShowCall(false);
+      setCallMinimized(false);
+    }
+  };
+
+  const handleJoinCall = () => {
+    setShowCall(true);
+    setCallMinimized(false);
+  };
+
+  const handleLeaveCall = () => {
+    setShowCall(false);
+    setCallMinimized(false);
+    if (isHost && hostProfile) {
+      updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
+        'houseConfig.liveSession.callActive': false,
+        'houseConfig.liveSession.updatedAt': Date.now()
+      }).catch(() => {});
+    }
   };
 
   /* ─── MULTI-INVITE ──────────────────────────────────────── */
@@ -928,7 +1011,7 @@ export default function HeroHouse() {
                 <Shirt className="w-5 h-5" />
               </button>
             )}
-            {/* Call button: host starts, all join */}
+            {/* Call button: host starts, visitors join — opens Jitsi in new tab */}
             {isHost ? (
               <button onClick={handleToggleCall}
                 title={houseSession?.callActive ? 'إنهاء المكالمة' : 'ابدئي مكالمة فيديو'}
@@ -936,9 +1019,9 @@ export default function HeroHouse() {
                 {houseSession?.callActive ? <PhoneOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
               </button>
             ) : houseSession?.callActive ? (
-              <button onClick={() => setShowCall(c => !c)}
+              <button onClick={handleJoinCall}
                 title="انضمي للمكالمة"
-                className={`w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all animate-pulse ${showCall ? 'bg-emerald-500 text-white' : 'bg-white/90 text-emerald-500'}`}>
+                className="w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all animate-pulse bg-emerald-500 text-white">
                 <Video className="w-5 h-5" />
               </button>
             ) : null}
@@ -1008,9 +1091,36 @@ export default function HeroHouse() {
             </button>
           )}
           {!isEditing && !showWardrobe && visitId !== 'self' && (
-            <button onClick={handleStartGame} className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-orange-500 shadow-xl border-3 border-white hover:scale-105 transition-transform">
-              <Gamepad2 className="w-5 h-5" />
-            </button>
+            <div className="relative">
+              <button onClick={() => setShowGamePicker(p => !p)} className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-orange-500 shadow-xl border-3 border-white hover:scale-105 transition-transform">
+                <Gamepad2 className="w-5 h-5" />
+              </button>
+              <AnimatePresence>
+                {showGamePicker && (
+                  <motion.div initial={{ opacity: 0, scale: 0.85, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.85, y: 10 }}
+                    className="absolute top-14 left-0 bg-white rounded-2xl shadow-2xl border-2 border-orange-100 p-3 flex flex-col gap-2 min-w-[140px] pointer-events-auto z-50" dir="rtl">
+                    <p className="text-[10px] font-black text-slate-400 pb-1 border-b border-slate-100">اختاري لعبة</p>
+                    <button onClick={() => { setShowGamePicker(false); handleStartGame(); }}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-orange-50 transition-colors text-right">
+                      <span className="text-xl">⭕</span>
+                      <span className="font-bold text-slate-700 text-sm">إكس أو</span>
+                    </button>
+                    <button onClick={handleStartRPS}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-orange-50 transition-colors text-right">
+                      <span className="text-xl">🪨</span>
+                      <span className="font-bold text-slate-700 text-sm">حجر ورقة مقص</span>
+                    </button>
+                    {visit?.gameState && (
+                      <button onClick={handleCloseGame}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-red-50 transition-colors text-right border-t border-slate-100 mt-1">
+                        <X className="w-4 h-4 text-red-400" />
+                        <span className="font-bold text-red-400 text-sm">إغلاق اللعبة</span>
+                      </button>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           )}
         </div>
       </div>
@@ -1279,33 +1389,30 @@ export default function HeroHouse() {
         )}
       </div>
 
-      {/* ── JITSI CALL OVERLAY ── */}
+      {/* ── CALL ACTIVE BANNER ── */}
       <AnimatePresence>
-        {(showCall || (isHost && houseSession?.callActive)) && (
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-            className="absolute inset-4 z-[60] rounded-[2rem] overflow-hidden shadow-2xl border-4 border-emerald-400 pointer-events-auto flex flex-col">
-            <div className="bg-emerald-600 px-5 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Video className="w-5 h-5 text-white" />
-                <span className="font-black text-white">مكالمة الفيديو الجماعية</span>
-                <span className="bg-white/20 text-white text-xs px-2 py-0.5 rounded-full font-bold">
-                  {1 + Object.values(houseSession?.visitors ?? {}).length} 👧
-                </span>
-              </div>
-              <button onClick={() => {
-                  if (isHost) { handleToggleCall(); } else { setShowCall(false); }
-                }}
-                className="bg-red-500 hover:bg-red-600 text-white px-4 py-1.5 rounded-xl font-bold text-sm flex items-center gap-2">
-                <PhoneOff className="w-4 h-4" />
-                {isHost ? 'إنهاء المكالمة' : 'مغادرة'}
-              </button>
+        {houseSession?.callActive && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
+            className="absolute top-24 left-1/2 -translate-x-1/2 z-[60] pointer-events-auto">
+            <div className="bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3">
+              <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse" />
+              <span className="font-black text-sm">مكالمة جارية</span>
+              <span className="bg-white/20 text-xs px-2 py-0.5 rounded-full font-bold">
+                {1 + Object.values(houseSession?.visitors ?? {}).length} 👧
+              </span>
+              {!isHost && (
+                <button onClick={handleJoinCall}
+                  className="bg-white text-emerald-700 font-black text-xs px-3 py-1.5 rounded-xl hover:bg-emerald-50 transition-colors flex items-center gap-1">
+                  <Video className="w-3.5 h-3.5" /> انضمي
+                </button>
+              )}
+              {isHost && (
+                <button onClick={handleToggleCall}
+                  className="bg-red-500 hover:bg-red-600 text-white font-black text-xs px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1">
+                  <PhoneOff className="w-3.5 h-3.5" /> إنهاء
+                </button>
+              )}
             </div>
-            <iframe
-              src={`https://meet.jit.si/NadiBatlat-${hostProfile?.uid}#userInfo.displayName="${encodeURIComponent(activeChild?.heroName || activeChild?.name || 'بطلة')}"&config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false`}
-              className="flex-1 w-full"
-              allow="camera; microphone; fullscreen; display-capture"
-              style={{ border: 'none' }}
-            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -1386,34 +1493,126 @@ export default function HeroHouse() {
                 )}
               </motion.div>
             )}
+            {visit?.gameState?.type === 'rps' && (() => {
+              const gs = visit.gameState;
+              const isX = gs.playerX === activeChild?.uid;
+              const myChoice = isX ? gs.choiceX : gs.choiceO;
+              const theirChoice = isX ? gs.choiceO : gs.choiceX;
+              const myMarkerRPS = isX ? 'X' : 'O';
+              const waiting = myChoice && !gs.winner;
+              return (
+                <motion.div initial={{ opacity: 0, scale: 0.8, y: 50 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8, y: 50 }}
+                  className="bg-white/97 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-fuchsia-100 p-5 w-full mb-3">
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-base font-black text-fuchsia-600 flex items-center gap-2">🪨 حجر ورقة مقص</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400 font-bold">جولة {gs.round}</span>
+                      <button onClick={handleCloseGame} className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-500"><X className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                  {/* Scores */}
+                  <div className="flex justify-center gap-6 mb-4">
+                    <div className="text-center">
+                      <p className="text-xs text-slate-400">أنتِ</p>
+                      <p className="text-2xl font-black text-fuchsia-600">{gs.scores[myMarkerRPS]}</p>
+                    </div>
+                    <div className="text-center self-center text-slate-300 font-black">vs</div>
+                    <div className="text-center">
+                      <p className="text-xs text-slate-400">صديقتكِ</p>
+                      <p className="text-2xl font-black text-sky-500">{gs.scores[myMarkerRPS === 'X' ? 'O' : 'X']}</p>
+                    </div>
+                  </div>
+                  {/* Choices display */}
+                  {gs.winner && (
+                    <div className="flex justify-center gap-4 mb-3">
+                      <div className="text-center">
+                        <div className="text-4xl">{RPS_ICONS[myChoice ?? ''] ?? '❓'}</div>
+                        <p className="text-xs text-slate-400 mt-1">أنتِ</p>
+                      </div>
+                      <div className="text-2xl self-center">⚔️</div>
+                      <div className="text-center">
+                        <div className="text-4xl">{RPS_ICONS[theirChoice ?? ''] ?? '❓'}</div>
+                        <p className="text-xs text-slate-400 mt-1">صديقتكِ</p>
+                      </div>
+                    </div>
+                  )}
+                  {/* Result */}
+                  {gs.winner && (
+                    <div className="text-center font-black text-lg mb-3">
+                      {gs.winner === 'draw' ? '🤝 تعادل!' : gs.winner === myMarkerRPS ? '🎉 فزتِ!' : '👏 فازت صديقتكِ!'}
+                    </div>
+                  )}
+                  {/* Pick buttons or waiting */}
+                  {!gs.winner && (
+                    <div className="flex flex-col gap-2">
+                      {waiting ? (
+                        <div className="text-center text-slate-400 text-sm font-bold py-2 animate-pulse">⏳ تنتظرين...</div>
+                      ) : (
+                        <>
+                          <p className="text-center text-xs text-slate-500 font-bold mb-1">اختاري:</p>
+                          <div className="flex gap-2 justify-center">
+                            {(['rock', 'paper', 'scissors'] as const).map(c => (
+                              <button key={c} onClick={() => handleRPSChoice(c)}
+                                className={`flex-1 py-2.5 rounded-xl text-2xl flex flex-col items-center gap-0.5 transition-all border-2 font-bold text-xs ${myChoice === c ? 'bg-fuchsia-100 border-fuchsia-400' : 'bg-slate-50 border-slate-200 hover:bg-fuchsia-50 hover:border-fuchsia-200'}`}>
+                                <span>{RPS_ICONS[c]}</span>
+                                <span className="text-[10px] text-slate-500">{RPS_LABELS[c]}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {gs.winner && (
+                    <button onClick={handleRestartRPS} className="mt-2 w-full bg-fuchsia-500 text-white font-black py-2 rounded-xl shadow-md hover:bg-fuchsia-600 text-sm">جولة جديدة 🔄</button>
+                  )}
+                </motion.div>
+              );
+            })()}
           </AnimatePresence>
         </div>
       )}
 
-      {/* ── ACTION BAR (bottom center) ── */}
+      {/* ── ACTION BAR (bottom center) + hide/show toggle ── */}
       {!isEditing && !showWardrobe && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
-          <div className="bg-white/93 backdrop-blur-xl px-4 py-3 rounded-[2rem] shadow-2xl border-4 border-white flex gap-2 items-center">
-            {[
-              { type: 'tea' as const, emoji: '☕', label: 'شاي' },
-              { type: 'sweets' as const, emoji: '🍰', label: 'حلوى' },
-              { type: 'juice' as const, emoji: '🍹', label: 'عصير' },
-              { type: 'cookies' as const, emoji: '🍪', label: 'بسكويت' },
-              { type: 'music' as const, emoji: '🎵', label: 'موسيقى' },
-              { type: 'dance' as const, emoji: '💃', label: 'رقص' },
-              { type: 'heart' as const, emoji: '💖', label: 'حب' },
-              { type: 'star' as const, emoji: '⭐', label: 'نجمة' },
-              { type: 'laugh' as const, emoji: '😂', label: 'ضحك' },
-              { type: 'wow' as const, emoji: '😲', label: 'واو' },
-            ].map(action => (
-              <motion.button key={action.type} whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }}
-                onClick={() => handleAction(action.type)}
-                className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-50 hover:bg-fuchsia-50 border-2 border-slate-100 hover:border-fuchsia-300 flex items-center justify-center text-xl sm:text-2xl shadow-sm transition-all"
-                title={action.label}>
-                {action.emoji}
-              </motion.button>
-            ))}
-          </div>
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto flex flex-col items-center gap-1.5">
+          <button
+            onClick={() => setShowActionBar(p => !p)}
+            className="text-[10px] font-black px-3 py-1 rounded-full shadow bg-white/80 backdrop-blur-md text-slate-500 border border-white/60 hover:bg-white transition-colors"
+          >
+            {showActionBar ? '▼ إخفاء الأزرار' : '▲ إظهار الأزرار'}
+          </button>
+          <AnimatePresence>
+            {showActionBar && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                className="bg-white/93 backdrop-blur-xl px-4 py-3 rounded-[2rem] shadow-2xl border-4 border-white flex gap-2 items-center"
+              >
+                {[
+                  { type: 'tea' as const, emoji: '☕', label: 'شاي' },
+                  { type: 'sweets' as const, emoji: '🍰', label: 'حلوى' },
+                  { type: 'juice' as const, emoji: '🍹', label: 'عصير' },
+                  { type: 'cookies' as const, emoji: '🍪', label: 'بسكويت' },
+                  { type: 'music' as const, emoji: '🎵', label: 'موسيقى' },
+                  { type: 'dance' as const, emoji: '💃', label: 'رقص' },
+                  { type: 'heart' as const, emoji: '💖', label: 'حب' },
+                  { type: 'star' as const, emoji: '⭐', label: 'نجمة' },
+                  { type: 'laugh' as const, emoji: '😂', label: 'ضحك' },
+                  { type: 'wow' as const, emoji: '😲', label: 'واو' },
+                ].map(action => (
+                  <motion.button key={action.type} whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }}
+                    onClick={() => handleAction(action.type)}
+                    className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-50 hover:bg-fuchsia-50 border-2 border-slate-100 hover:border-fuchsia-300 flex items-center justify-center text-xl sm:text-2xl shadow-sm transition-all"
+                    title={action.label}>
+                    {action.emoji}
+                  </motion.button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
@@ -1548,6 +1747,24 @@ export default function HeroHouse() {
           />
         ) : null;
       })()}
+
+      {/* ── IN-PAGE JITSI CALL (with minimize/PiP support) ── */}
+      <AnimatePresence>
+        {showCall && hostProfile && activeChild && (
+          <JitsiCallEmbed
+            key="house-call"
+            roomId={jitsiRoomId}
+            displayName={jitsiDisplayName}
+            callType="video"
+            title={`مكالمة بيت ${hostProfile.heroName || hostProfile.name}`}
+            compact
+            minimized={callMinimized}
+            onMinimize={() => setCallMinimized(true)}
+            onExpand={() => setCallMinimized(false)}
+            onClose={handleLeaveCall}
+          />
+        )}
+      </AnimatePresence>
 
     </div>
   );

@@ -9,10 +9,10 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { db, storage } from '../firebase';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, orderBy, getDocs, setDoc, limit, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, orderBy, getDocs, setDoc, limit, arrayUnion, arrayRemove, deleteField } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { ChildProfile, FriendRequest, DirectMessage, ChatSession, OnlineStatus, CallSession } from '../types';
-import { CallScreen } from '../components/CallScreen';
+import JitsiCallEmbed from '../components/JitsiCallEmbed';
 import { IncomingCallModal } from '../components/IncomingCallModal';
 import { CreateGroupModal } from '../components/CreateGroupModal';
 import { useNotifications } from '../hooks/useNotifications';
@@ -73,7 +73,11 @@ export default function FriendsChat() {
   const [onlineStatuses, setOnlineStatuses] = useState<Record<string, OnlineStatus>>({});
   const [activeCall, setActiveCall] = useState<CallSession | null>(null);
   const [incomingCall, setIncomingCall] = useState<CallSession | null>(null);
+  const [jitsiRoomId, setJitsiRoomId] = useState<string | null>(null);
+  const [jitsiCallType, setJitsiCallType] = useState<'audio' | 'video'>('video');
+  const [jitsiTitle, setJitsiTitle] = useState<string>('');
   const [isDialing, setIsDialing] = useState(false);
+  const [dismissedGroupCalls, setDismissedGroupCalls] = useState<Set<string>>(new Set());
   
   const { playMessageSound, playCallSound } = useNotifications(activeChild?.uid);
   const callAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -406,63 +410,73 @@ export default function FriendsChat() {
     }
   };
 
+  /* ── 1-on-1 call ── */
   const handleStartCall = async (type: 'audio' | 'video') => {
     if (!activeChild || !activeChat) return;
-    
-    // Prevent starting a new call if already in one or receiving one
-    if (activeCall || incomingCall) {
-      toast.error('أنت في مكالمة بالفعل');
-      return;
-    }
+    if (jitsiRoomId) { toast.error('أنت في مكالمة بالفعل'); return; }
 
     try {
-      // Check if the other user is already in a call (Busy state)
-      // Since we are using path-based isolation, we can only check if they are busy in the current chat
-      const otherId = isChatSession(activeChat) 
-        ? activeChat.participants.find(p => p !== activeChild.uid) 
+      const otherId = isChatSession(activeChat)
+        ? activeChat.participants.find(p => p !== activeChild.uid)
         : activeChat.uid;
-        
       if (!otherId) return;
 
       const chatId = [activeChild.uid, otherId].sort().join('_');
-      const qCalls = query(
-        collection(db, 'chats', chatId, 'calls'),
-        where('calleeId', '==', otherId),
-        where('status', 'in', ['ringing', 'accepted', 'connected'])
-      );
-      const activeCallsSnapshot = await getDocs(qCalls);
-      
-      if (!activeCallsSnapshot.empty) {
-        toast.error('الخط مشغول حالياً');
-        return;
-      }
+      const otherProfile = allChildren.find(c => c.uid === otherId);
+      const otherName = otherProfile?.heroName || otherProfile?.name || 'صديقتك';
 
+      // Write ringing call doc so the other side sees IncomingCallModal
       const callDoc = await addDoc(collection(db, 'chats', chatId, 'calls'), {
         chatId,
         callerId: activeChild.uid,
-        callerName: activeChild.name,
+        callerName: activeChild.heroName || activeChild.name,
         callerAvatar: activeChild.avatar || null,
         calleeId: otherId,
         type,
         status: 'ringing',
         createdAt: Date.now()
       });
-      
+
       setActiveCall({
         id: callDoc.id,
         chatId,
         callerId: activeChild.uid,
-        callerName: activeChild.name,
+        callerName: activeChild.heroName || activeChild.name,
         callerAvatar: activeChild.avatar,
         calleeId: otherId,
         type,
         status: 'ringing',
         createdAt: Date.now()
       });
+      setIsDialing(true);
+      setJitsiCallType(type);
+      setJitsiTitle(type === 'video' ? `مكالمة فيديو مع ${otherName}` : `مكالمة صوتية مع ${otherName}`);
+      setJitsiRoomId(`dm-${callDoc.id}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'calls');
       toast.error('حدث خطأ أثناء بدء المكالمة');
     }
+  };
+
+  /* ── Group call — write activeGroupCall to chat doc for notification ── */
+  const handleStartGroupCall = async (type: 'audio' | 'video' = 'video') => {
+    if (!activeChild || !activeChat || !isChatSession(activeChat)) return;
+    if (jitsiRoomId) { toast.error('أنت في مكالمة بالفعل'); return; }
+    const chat = activeChat as ChatSession;
+    try {
+      await updateDoc(doc(db, 'chats', chat.id), {
+        activeGroupCall: {
+          callerId: activeChild.uid,
+          callerName: activeChild.heroName || activeChild.name,
+          callerAvatar: activeChild.avatar || null,
+          type,
+          startedAt: Date.now()
+        }
+      });
+    } catch { /* non-fatal — call still opens */ }
+    setJitsiCallType(type);
+    setJitsiTitle(`مكالمة جماعية — ${chat.name || 'المجموعة'}`);
+    setJitsiRoomId(`grp-${chat.id}`);
   };
 
   const handleAcceptCall = async () => {
@@ -473,10 +487,27 @@ export default function FriendsChat() {
         acceptedAt: Date.now()
       });
       setActiveCall({ ...incomingCall, status: 'accepted' });
+      const callerName = incomingCall.callerName || 'صديقتك';
+      setJitsiCallType(incomingCall.type);
+      setJitsiTitle(incomingCall.type === 'video' ? `مكالمة فيديو مع ${callerName}` : `مكالمة صوتية مع ${callerName}`);
+      setJitsiRoomId(`dm-${incomingCall.id}`);
       setIncomingCall(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `chats/${incomingCall.chatId}/calls/${incomingCall.id}`);
     }
+  };
+
+  const handleJoinGroupCall = async (chat: ChatSession) => {
+    if (jitsiRoomId) { toast.error('أنت في مكالمة بالفعل'); return; }
+    const gc = (chat as any).activeGroupCall;
+    setJitsiCallType(gc?.type || 'video');
+    setJitsiTitle(`مكالمة جماعية — ${chat.name || 'المجموعة'}`);
+    setJitsiRoomId(`grp-${chat.id}`);
+  };
+
+  const handleDeclineGroupCall = (chat: ChatSession) => {
+    // Dismiss the ringing banner locally — doesn't end the call for others
+    setDismissedGroupCalls(prev => new Set([...prev, chat.id]));
   };
 
   const handleRejectCall = async () => {
@@ -492,8 +523,18 @@ export default function FriendsChat() {
     }
   };
 
-  const handleEndCall = () => {
+  const handleEndCall = async () => {
+    // If group call and this user started it, clear the activeGroupCall from Firestore
+    if (jitsiRoomId?.startsWith('grp-') && activeChild) {
+      const chatId = jitsiRoomId.replace('grp-', '');
+      const chat = chats.find(c => c.id === chatId);
+      if (chat && (chat as any).activeGroupCall?.callerId === activeChild.uid) {
+        updateDoc(doc(db, 'chats', chatId), { activeGroupCall: deleteField() }).catch(() => {});
+      }
+    }
     setActiveCall(null);
+    setJitsiRoomId(null);
+    setIsDialing(false);
   };
 
   const handleSendMessage = () => {
@@ -1012,9 +1053,26 @@ export default function FriendsChat() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 text-blue-500">
-                      <button onClick={() => handleStartCall('audio')} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><Phone className="w-5 h-5" /></button>
-                      <button onClick={() => handleStartCall('video')} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><Video className="w-6 h-6" /></button>
+                    <div className="flex items-center gap-2 text-blue-500">
+                      {/* DM call buttons — only for 1-on-1 chats */}
+                      {!isChatSession(activeChat) && (<>
+                        <button onClick={() => handleStartCall('audio')} title="مكالمة صوتية" className="p-2 hover:bg-slate-100 rounded-full transition-colors"><Phone className="w-5 h-5" /></button>
+                        <button onClick={() => handleStartCall('video')} title="مكالمة فيديو" className="p-2 hover:bg-slate-100 rounded-full transition-colors"><Video className="w-6 h-6" /></button>
+                      </>)}
+                      {/* Group call button */}
+                      {isChatSession(activeChat) && activeChat.type === 'group' && (
+                        <button
+                          onClick={() => handleStartGroupCall('video')}
+                          title="مكالمة جماعية"
+                          className="p-2 hover:bg-emerald-50 rounded-full transition-colors text-emerald-500 relative"
+                        >
+                          <Video className="w-5 h-5" />
+                          {/* Active indicator */}
+                          {(activeChat as any).activeGroupCall && (
+                            <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white animate-pulse" />
+                          )}
+                        </button>
+                      )}
                       <button 
                         onClick={() => setIsChatInfoOpen(!isChatInfoOpen)}
                         className={`p-2 rounded-full transition-colors ${isChatInfoOpen ? 'bg-blue-100 text-blue-600' : 'hover:bg-slate-100'}`}
@@ -1443,13 +1501,73 @@ export default function FriendsChat() {
         />
       )}
 
-      {activeCall && (
-        <CallScreen 
-          call={activeCall} 
-          isCaller={activeCall.callerId === activeChild.uid}
-          onEndCall={handleEndCall} 
+      {/* ── Jitsi in-app call overlay ── */}
+      {jitsiRoomId && (
+        <JitsiCallEmbed
+          roomId={jitsiRoomId}
+          displayName={activeChild.heroName || activeChild.name}
+          callType={jitsiCallType}
+          title={jitsiTitle}
+          compact
+          onClose={handleEndCall}
         />
       )}
+
+      {/* ── Group call ringing notification (for all group members) ── */}
+      <AnimatePresence>
+        {(() => {
+          const incomingGroupChats = chats.filter(c =>
+            (c as any).activeGroupCall &&
+            (c as any).activeGroupCall.callerId !== activeChild.uid &&
+            !jitsiRoomId &&
+            !dismissedGroupCalls.has(c.id)
+          );
+          if (incomingGroupChats.length === 0) return null;
+          return incomingGroupChats.map(gc => {
+            const call = (gc as any).activeGroupCall;
+            return (
+              <motion.div
+                key={gc.id}
+                initial={{ opacity: 0, y: -80 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -80 }}
+                className="fixed top-4 left-1/2 -translate-x-1/2 z-[120] w-[calc(100vw-2rem)] max-w-sm"
+                style={{ direction: 'rtl' }}
+              >
+                <div className="bg-white rounded-2xl shadow-2xl border-2 border-emerald-200 overflow-hidden">
+                  <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 flex items-center gap-2">
+                    <Video className="w-4 h-4 text-white animate-pulse" />
+                    <span className="text-white text-xs font-black">مكالمة جماعية نشطة</span>
+                  </div>
+                  <div className="p-4 flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-2xl flex-shrink-0">
+                      👤
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-black text-slate-800 text-sm">{call.callerName}</p>
+                      <p className="text-slate-500 text-xs">بدأت مكالمة جماعية في "{gc.name || 'المجموعة'}"</p>
+                    </div>
+                  </div>
+                  <div className="px-4 pb-4 flex gap-2">
+                    <button
+                      onClick={() => handleJoinGroupCall(gc)}
+                      className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-sm py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <Video className="w-4 h-4" /> انضمي
+                    </button>
+                    <button
+                      onClick={() => handleDeclineGroupCall(gc)}
+                      className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-sm py-2.5 rounded-xl transition-colors"
+                    >
+                      تجاهل
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          });
+        })()}
+      </AnimatePresence>
 
       {/* Profile Settings Modal */}
       <AnimatePresence>

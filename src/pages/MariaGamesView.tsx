@@ -2,13 +2,16 @@ import { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { MARIA_GAMES_WITH_SOURCE, MARIA_CATEGORIES, MariaGameCategory, MariaGame } from '../data/mariaGamesData';
-import { Search, ArrowRight, X, ExternalLink, ChevronLeft, ChevronRight, Play } from 'lucide-react';
+import { Search, ArrowRight, X, ChevronLeft, ChevronRight, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
 
 export default function MariaGamesView() {
   const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState<MariaGameCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGame, setSelectedGame] = useState<MariaGame | null>(null);
+  const [iframeLoading, setIframeLoading] = useState(false);
+  const [iframeKey, setIframeKey] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
 
   const filteredGames = useMemo(() => {
@@ -19,8 +22,24 @@ export default function MariaGamesView() {
     });
   }, [activeCategory, searchQuery]);
 
-  const getGamePlayUrl = (game: MariaGame) => game.externalUrl || game.route || '';
-  const isEmbeddable = (url: string) => !!url && !/poki\.com/i.test(url);
+  const getGameUrl = (game: MariaGame) => game.externalUrl || game.route || '';
+
+  const openGame = (game: MariaGame) => {
+    setSelectedGame(game);
+    setIframeLoading(true);
+    setIframeKey(k => k + 1);
+    setIsFullscreen(false);
+  };
+
+  const closeGame = () => {
+    setSelectedGame(null);
+    setIsFullscreen(false);
+  };
+
+  const reloadGame = () => {
+    setIframeLoading(true);
+    setIframeKey(k => k + 1);
+  };
 
   const scrollTabs = (dir: 'left' | 'right') => {
     if (tabsRef.current) {
@@ -33,7 +52,6 @@ export default function MariaGamesView() {
 
       {/* ── Navbar ── */}
       <nav className="h-16 bg-white shadow-sm sticky top-0 z-40 flex items-center px-4 gap-3">
-        {/* Back */}
         <button
           onClick={() => navigate('/child')}
           className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 transition-colors shrink-0"
@@ -41,7 +59,6 @@ export default function MariaGamesView() {
           <ArrowRight className="w-5 h-5" />
         </button>
 
-        {/* Logo */}
         <div
           className="flex items-center gap-2 cursor-pointer shrink-0"
           onClick={() => { setActiveCategory('all'); setSearchQuery(''); }}
@@ -50,7 +67,6 @@ export default function MariaGamesView() {
           <span className="text-xl font-black text-slate-800 hidden sm:block">ألعاب ماريا</span>
         </div>
 
-        {/* Search */}
         <div className="flex-1 max-w-xl mx-auto">
           <div className="relative">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
@@ -64,16 +80,14 @@ export default function MariaGamesView() {
           </div>
         </div>
 
-        {/* Avatar */}
         <div className="w-9 h-9 bg-gradient-to-br from-pink-400 to-fuchsia-500 rounded-full flex items-center justify-center shrink-0 shadow">
           <span className="text-lg">👧</span>
         </div>
       </nav>
 
-      {/* ── Category Tabs (Poki style) ── */}
+      {/* ── Category Tabs ── */}
       <div className="bg-white border-b border-slate-100 sticky top-16 z-30">
         <div className="relative flex items-center">
-          {/* Scroll left */}
           <button
             onClick={() => scrollTabs('right')}
             className="absolute right-0 z-10 h-full px-1 bg-gradient-to-l from-white via-white to-transparent flex items-center"
@@ -102,7 +116,6 @@ export default function MariaGamesView() {
             ))}
           </div>
 
-          {/* Scroll right */}
           <button
             onClick={() => scrollTabs('left')}
             className="absolute left-0 z-10 h-full px-1 bg-gradient-to-r from-white via-white to-transparent flex items-center"
@@ -132,7 +145,7 @@ export default function MariaGamesView() {
                     transition={{ duration: 0.15 }}
                     whileHover={{ scale: 1.05, zIndex: 20 }}
                     whileTap={{ scale: 0.97 }}
-                    onClick={() => setSelectedGame(game)}
+                    onClick={() => openGame(game)}
                     className={`
                       relative rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl transition-shadow duration-200
                       bg-gradient-to-br ${game.color}
@@ -159,7 +172,14 @@ export default function MariaGamesView() {
                       </div>
                     )}
 
-                    {/* Hover title */}
+                    {/* Playable badge */}
+                    {getGameUrl(game) && (
+                      <span className="absolute top-1.5 right-1.5 bg-emerald-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">
+                        ▶ العب
+                      </span>
+                    )}
+
+                    {/* Hover overlay */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity duration-200 flex items-end p-2">
                       <p className="text-white text-xs font-black leading-tight text-center w-full drop-shadow-md line-clamp-2">
                         {game.title}
@@ -185,90 +205,103 @@ export default function MariaGamesView() {
         )}
       </main>
 
-      {/* ── Game Modal ── */}
+      {/* ── Game Modal (fullscreen iframe player) ── */}
       <AnimatePresence>
         {selectedGame && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-3"
-            onClick={() => setSelectedGame(null)}
+            className={`fixed z-50 bg-black flex flex-col ${isFullscreen ? 'inset-0' : 'inset-0 md:inset-4 md:rounded-3xl overflow-hidden'}`}
           >
-            <motion.div
-              initial={{ scale: 0.92, y: 16 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.92, y: 16 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-slate-900 rounded-3xl w-full max-w-5xl overflow-hidden shadow-2xl flex flex-col"
-            >
-              {/* Modal header */}
-              <div className="flex items-center justify-between px-5 py-3 bg-slate-800">
-                <div className="flex items-center gap-3">
-                  {selectedGame.image ? (
-                    <img src={selectedGame.image} alt={selectedGame.title} className="w-8 h-8 object-cover rounded-lg" />
-                  ) : (
-                    <span className="text-2xl">{selectedGame.emoji}</span>
-                  )}
-                  <h2 className="text-white font-black text-lg">{selectedGame.title}</h2>
-                </div>
-                <div className="flex items-center gap-2">
-                  <a
-                    href={getGamePlayUrl(selectedGame)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1.5 bg-pink-500 hover:bg-pink-600 text-white font-black text-sm px-4 py-2 rounded-xl transition-colors"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    فتح اللعبة
-                  </a>
-                    <button onClick={() => setSelectedGame(null)} className="w-9 h-9 rounded-xl bg-white/10 hover:bg-red-500/30 text-white flex items-center justify-center transition-colors">
-                      <X className="w-5 h-5" />
-                    </button>
-                </div>
+            {/* Header bar */}
+            <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900 shrink-0 gap-3">
+              {/* Game identity */}
+              <div className="flex items-center gap-2 min-w-0">
+                {selectedGame.image ? (
+                  <img src={selectedGame.image} alt={selectedGame.title} className="w-7 h-7 object-cover rounded-lg shrink-0" />
+                ) : (
+                  <span className="text-xl shrink-0">{selectedGame.emoji}</span>
+                )}
+                <h2 className="text-white font-black text-sm truncate">{selectedGame.title}</h2>
               </div>
 
-              {/* Game area */}
-              <div className="h-[70vh] bg-slate-950 relative">
-                {isEmbeddable(getGamePlayUrl(selectedGame)) ? (
-                  <iframe
-                    title={selectedGame.title}
-                    src={getGamePlayUrl(selectedGame)}
-                    className="w-full h-full border-0"
-                    allow="fullscreen; autoplay; gamepad"
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups"
-                  />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-6 text-center p-8">
-                    {selectedGame.image && (
-                      <img
-                        src={selectedGame.image}
-                        alt={selectedGame.title}
-                        className="w-40 h-40 object-cover rounded-3xl shadow-2xl"
-                      />
-                    )}
-                    {!selectedGame.image && (
-                      <div className="text-8xl">{selectedGame.emoji}</div>
-                    )}
-                    <div className="max-w-sm">
-                      <h3 className="text-white font-black text-2xl mb-2">{selectedGame.title}</h3>
-                      <p className="text-slate-400 font-bold text-sm mb-6">
-                        هذه اللعبة تُفتح في موقعها الرسمي مباشرةً
-                      </p>
-                      <a
-                        href={getGamePlayUrl(selectedGame)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 bg-pink-500 hover:bg-pink-600 text-white font-black text-lg px-8 py-4 rounded-2xl transition-colors shadow-xl shadow-pink-900/40"
-                      >
-                        <span>العب الآن</span>
-                        <ExternalLink className="w-5 h-5" />
-                      </a>
-                    </div>
-                  </div>
-                )}
+              {/* Controls */}
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Reload */}
+                <button
+                  onClick={reloadGame}
+                  title="إعادة تشغيل"
+                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+
+                {/* Fullscreen toggle */}
+                <button
+                  onClick={() => setIsFullscreen(f => !f)}
+                  title={isFullscreen ? 'تصغير' : 'ملء الشاشة'}
+                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                >
+                  {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+
+                {/* Close */}
+                <button
+                  onClick={closeGame}
+                  className="w-8 h-8 rounded-xl bg-white/10 hover:bg-red-500/60 text-white flex items-center justify-center transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-            </motion.div>
+            </div>
+
+            {/* Game iframe */}
+            <div className="relative flex-1 bg-slate-950">
+              {/* Loading spinner */}
+              {iframeLoading && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-slate-950">
+                  {selectedGame.image ? (
+                    <img
+                      src={selectedGame.image}
+                      alt={selectedGame.title}
+                      className="w-24 h-24 object-cover rounded-2xl shadow-2xl opacity-80 animate-pulse"
+                    />
+                  ) : (
+                    <div className="text-6xl animate-pulse">{selectedGame.emoji}</div>
+                  )}
+                  <div className="text-white font-black text-lg">{selectedGame.title}</div>
+                  <div className="flex gap-1.5 mt-2">
+                    {[0, 1, 2].map(i => (
+                      <div
+                        key={i}
+                        className="w-2.5 h-2.5 rounded-full bg-pink-400 animate-bounce"
+                        style={{ animationDelay: `${i * 0.15}s` }}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-slate-400 text-sm font-bold">جاري تحميل اللعبة...</p>
+                </div>
+              )}
+
+              {getGameUrl(selectedGame) ? (
+                <iframe
+                  key={iframeKey}
+                  title={selectedGame.title}
+                  src={getGameUrl(selectedGame)}
+                  className="w-full h-full border-0"
+                  allow="fullscreen; autoplay; gamepad; accelerometer; gyroscope"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups allow-top-navigation-by-user-activation"
+                  onLoad={() => setIframeLoading(false)}
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-center p-8">
+                  <div className="text-7xl">{selectedGame.emoji}</div>
+                  <h3 className="text-white font-black text-xl">{selectedGame.title}</h3>
+                  <p className="text-slate-400 font-bold text-sm">هذه اللعبة غير متاحة حالياً</p>
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

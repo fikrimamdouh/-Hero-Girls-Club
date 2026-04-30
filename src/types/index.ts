@@ -245,15 +245,29 @@ export interface VisitRequest {
     timestamp: number;
     triggeredBy: string;
   };
-  gameState?: {
-    type: 'tictactoe';
-    board: ('X' | 'O' | null)[];
-    turn: 'X' | 'O';
-    winner: 'X' | 'O' | 'draw' | null;
-    isDraw: boolean;
-    playerX?: string;
-    playerO?: string;
-  };
+  gameState?: (
+    {
+      type: 'tictactoe';
+      board: ('X' | 'O' | null)[];
+      turn: 'X' | 'O';
+      winner: 'X' | 'O' | 'draw' | null;
+      isDraw: boolean;
+      playerX?: string;
+      playerO?: string;
+    } | {
+      type: 'rps';
+      playerX?: string;
+      playerO?: string;
+      choiceX?: 'rock' | 'paper' | 'scissors' | null;
+      choiceO?: 'rock' | 'paper' | 'scissors' | null;
+      scores: { X: number; O: number };
+      round: number;
+      winner: 'X' | 'O' | 'draw' | null;
+      isDraw: boolean;
+      board: never[];
+      turn: 'X' | 'O';
+    }
+  );
   acceptedAt?: number;
   roomMood?: 'cozy' | 'playful' | 'calm';
   timestamp: number;

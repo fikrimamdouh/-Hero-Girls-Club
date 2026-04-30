@@ -1,9 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { MessageCircle, X, Send, Sparkles, Shield } from 'lucide-react';
+import { motion, AnimatePresence, useMotionValue } from 'motion/react';
+import { X, Send, Shield, EyeOff, Eye } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import { ChildProfile } from '../types';
+
+function getSavedPos() {
+  try { return JSON.parse(localStorage.getItem('chatbot_pos') || 'null') || { x: 0, y: 0 }; }
+  catch { return { x: 0, y: 0 }; }
+}
 
 export default function IdeaChatbot() {
   const assistants = [
@@ -13,6 +18,7 @@ export default function IdeaChatbot() {
   ] as const;
 
   const [isOpen, setIsOpen] = useState(false);
+  const [isHidden, setIsHidden] = useState(() => localStorage.getItem('chatbot_hidden') === 'true');
   const [activeAssistantId, setActiveAssistantId] = useState<typeof assistants[number]['id']>('malek');
   const activeChildStr = localStorage.getItem('active_child');
   const activeChild = activeChildStr ? JSON.parse(activeChildStr) as ChildProfile : null;
@@ -23,13 +29,33 @@ export default function IdeaChatbot() {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  /* ── Draggable position ── */
+  const saved = getSavedPos();
+  const dragX = useMotionValue(saved.x);
+  const dragY = useMotionValue(saved.y);
+
+  const handleDragEnd = () => {
+    localStorage.setItem('chatbot_pos', JSON.stringify({ x: dragX.get(), y: dragY.get() }));
+  };
+
+  const handleHide = () => {
+    setIsHidden(true);
+    setIsOpen(false);
+    localStorage.setItem('chatbot_hidden', 'true');
+  };
+
+  const handleShow = () => {
+    setIsHidden(false);
+    localStorage.setItem('chatbot_hidden', 'false');
+  };
+
   useEffect(() => {
     if (activeChild && messages.length === 0) {
       const heroName = activeChild.heroName || activeChild.name || 'بطلتنا';
       setMessages([
-        { 
-          role: 'model', 
-          text: `أهلاً بكِ يا بطلة ${heroName}! 🌟 أنا "${activeAssistant.name}" ${activeAssistant.emoji}، جاهزة أسمع أفكارك السحرية للموقع!` 
+        {
+          role: 'model',
+          text: `أهلاً بكِ يا بطلة ${heroName}! 🌟 أنا "${activeAssistant.name}" ${activeAssistant.emoji}، جاهزة أسمع أفكارك السحرية للموقع!`
         }
       ]);
     }
@@ -63,7 +89,6 @@ export default function IdeaChatbot() {
     const heroName = activeChild.heroName || activeChild.name || 'بطلتنا';
 
     try {
-      // 1. Call our custom Backend API (ChatGPT Proxy)
       const chatHistory = messages.slice(1).map(m => ({
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.text
@@ -72,94 +97,84 @@ export default function IdeaChatbot() {
 
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: chatHistory,
-          assistantData: {
-            name: activeAssistant.name,
-            vibe: activeAssistant.vibe
-          },
+          assistantData: { name: activeAssistant.name, vibe: activeAssistant.vibe },
           childName: heroName
         }),
       });
 
       let data;
-      const contentType = response.headers.get("content-type");
-      if (contentType && contentType.includes("application/json")) {
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
         data = await response.json();
       } else {
         const textError = await response.text();
         throw new Error(`Server returned non-JSON response: ${textError.substring(0, 100)}`);
       }
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to get AI response');
-      }
-
+      if (!response.ok) throw new Error(data.error || 'Failed to get AI response');
       const botReply = data.text;
+      if (!botReply) throw new Error('Empty AI response');
 
-      if (!botReply) {
-        throw new Error('Empty AI response');
-      }
-
-      // 2. Update UI
       setMessages(prev => [...prev, { role: 'model', text: botReply }]);
-      
-      // 3. Save to Firestore for Admin monitoring
+
       try {
         await Promise.all([
           addDoc(collection(db, 'idea_chats'), {
-            childId: activeChild.uid,
-            childName: heroName,
-            role: 'user',
-            text: userMsg,
-            createdAt: Date.now(),
-            status: 'new'
+            childId: activeChild.uid, childName: heroName,
+            role: 'user', text: userMsg, createdAt: Date.now(), status: 'new'
           }),
           addDoc(collection(db, 'idea_chats'), {
-            childId: activeChild.uid,
-            childName: heroName,
-            role: 'model',
-            text: botReply,
-            createdAt: Date.now(),
-            status: 'read'
+            childId: activeChild.uid, childName: heroName,
+            role: 'model', text: botReply, createdAt: Date.now(), status: 'read'
           })
         ]);
-    
-      } catch (dbError) {
-        console.error('Firestore save failed:', dbError);
-      }
+      } catch { /* non-critical */ }
 
-    } catch (error: any) {
-      console.error('Chat error:', error);
-      let errorMessage = `عذراً يا ${heroName}، يبدو أن قواي السحرية تحتاج لبعض الراحة. هل يمكنكِ المحاولة مرة أخرى؟ 🪄`;
-      
-      const errorStr = String(error?.message || error).toLowerCase();
-      
+    } catch (error: unknown) {
+      const heroName2 = activeChild.heroName || activeChild.name || 'بطلتنا';
+      const errorStr = String((error as Error)?.message || error).toLowerCase();
+      let errorMessage = `عذراً يا ${heroName2}، يبدو أن قواي السحرية تحتاج لبعض الراحة. هل يمكنكِ المحاولة مرة أخرى؟ 🪄`;
       if (errorStr.includes('configured') || errorStr.includes('missing')) {
-        errorMessage = `عذراً يا ${heroName}، يبدو أن "مفتاح السحر" (API Key) لم يتم تفعيله بشكل صحيح حتى الآن. يرجى من ولي الأمر التأكد من وضعه في الإعدادات والضغط على "Apply". 🔑`;
-      } else if (errorStr.includes('quota') || errorStr.includes('insufficient') || errorStr.includes('429')) {
-        errorMessage = `عذراً يا ${heroName}، المساعد مشغول جداً حالياً أو أن "رصيد السحر" قد انتهى! 😅 يرجى المحاولة لاحقاً.`;
-      } else {
-        errorMessage = `عذراً يا ${heroName}، حدث خطأ: ${error.message}. سنحاول إصلاحه قريباً! 🛠️`;
+        errorMessage = `عذراً يا ${heroName2}، يبدو أن "مفتاح السحر" (API Key) لم يتم تفعيله بشكل صحيح. 🔑`;
+      } else if (errorStr.includes('quota') || errorStr.includes('429')) {
+        errorMessage = `عذراً يا ${heroName2}، المساعد مشغول جداً حالياً! 😅 يرجى المحاولة لاحقاً.`;
       }
-      
       setMessages(prev => [...prev, { role: 'model', text: errorMessage }]);
     } finally {
       setIsTyping(false);
     }
   };
 
+  /* ── When fully hidden: show a tiny restore pill ── */
+  if (isHidden) {
+    return (
+      <motion.button
+        drag dragMomentum={false}
+        style={{ x: dragX, y: dragY }}
+        onDragEnd={handleDragEnd}
+        onClick={handleShow}
+        className="fixed bottom-6 left-6 z-50 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-black px-3 py-2 rounded-full shadow-lg flex items-center gap-1.5 cursor-pointer select-none"
+        title="إظهار المساعد"
+      >
+        <Eye className="w-3.5 h-3.5" />
+        مالك
+      </motion.button>
+    );
+  }
+
   return (
     <>
+      {/* Chat panel — positioned relative to drag button */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            style={{ x: dragX, y: dragY }}
             className="fixed bottom-24 left-6 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border-2 border-purple-200 overflow-hidden z-50 flex flex-col"
             dir="rtl"
           >
@@ -169,11 +184,17 @@ export default function IdeaChatbot() {
                 <Shield className="w-5 h-5 text-yellow-300" />
                 <h3 className="font-bold text-lg">{activeAssistant.name} {activeAssistant.emoji}</h3>
               </div>
-              <button onClick={() => setIsOpen(false)} className="hover:bg-white/20 p-1 rounded-full transition-colors">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button onClick={handleHide} title="إخفاء المساعد" className="hover:bg-white/20 p-1 rounded-full transition-colors">
+                  <EyeOff className="w-4 h-4" />
+                </button>
+                <button onClick={() => setIsOpen(false)} className="hover:bg-white/20 p-1 rounded-full transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
+            {/* Assistant tabs */}
             <div className="bg-white border-b border-purple-100 p-2 flex gap-2 overflow-x-auto">
               {assistants.map((assistant) => (
                 <button
@@ -195,8 +216,8 @@ export default function IdeaChatbot() {
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[80%] p-3 rounded-2xl ${
-                    msg.role === 'user' 
-                      ? 'bg-purple-500 text-white rounded-tl-none' 
+                    msg.role === 'user'
+                      ? 'bg-purple-500 text-white rounded-tl-none'
                       : 'bg-white border border-purple-100 text-slate-700 rounded-tr-none shadow-sm'
                   }`}>
                     <p className="text-sm leading-relaxed">{msg.text}</p>
@@ -237,12 +258,32 @@ export default function IdeaChatbot() {
         )}
       </AnimatePresence>
 
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-6 left-6 w-14 h-14 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full shadow-lg shadow-blue-500/30 flex items-center justify-center text-white hover:scale-110 transition-transform z-50"
+      {/* Draggable toggle button */}
+      <motion.div
+        drag dragMomentum={false}
+        style={{ x: dragX, y: dragY }}
+        onDragEnd={handleDragEnd}
+        className="fixed bottom-6 left-6 z-50 cursor-grab active:cursor-grabbing select-none"
       >
-        {isOpen ? <X className="w-6 h-6" /> : <Shield className="w-6 h-6" />}
-      </button>
+        <div className="relative">
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="w-14 h-14 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full shadow-lg shadow-blue-500/30 flex items-center justify-center text-white hover:scale-110 transition-transform"
+          >
+            {isOpen ? <X className="w-6 h-6" /> : <Shield className="w-6 h-6" />}
+          </button>
+          {/* Small hide button in corner */}
+          {!isOpen && (
+            <button
+              onClick={(e) => { e.stopPropagation(); handleHide(); }}
+              className="absolute -top-1 -right-1 w-5 h-5 bg-slate-600 hover:bg-slate-700 rounded-full flex items-center justify-center text-white shadow-md transition-colors"
+              title="إخفاء المساعد"
+            >
+              <EyeOff className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </motion.div>
     </>
   );
 }
