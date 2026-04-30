@@ -1,97 +1,76 @@
  (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
-diff --git a/src/services/roomService.ts b/src/services/roomService.ts
+diff --git a/src/services/chatService.ts b/src/services/chatService.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..a108fcbec69604116c8f4e54d3b0a31d816968cd
+index 0000000000000000000000000000000000000000..423a59217722639196eb9ea1223460923112930a
 --- /dev/null
-+++ b/src/services/roomService.ts
-@@ -0,0 +1,88 @@
++++ b/src/services/chatService.ts
+@@ -0,0 +1,67 @@
 +import { db } from '../firebase';
-+import { addDoc, collection, doc, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore';
-+import { CallSession } from '../types';
++import { addDoc, arrayRemove, arrayUnion, collection, doc, getDocs, onSnapshot, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
 +
-+export const roomService = {
-+  participantsRef: (roomId: string) => collection(db, 'visit_rooms', roomId, 'participants'),
-+  invitesRef: (roomId: string) => collection(db, 'visit_rooms', roomId, 'invites'),
-+  callsRef: (roomId: string) => collection(db, 'visit_rooms', roomId, 'calls'),
-+  messagesRef: (roomId: string) => collection(db, 'visit_rooms', roomId, 'messages'),
-+
-+  joinRoom: async (roomId: string, payload: { uid: string; heroName: string; avatar: any }) => {
-+    await setDoc(doc(db, 'visit_rooms', roomId, 'participants', payload.uid), {
-+      ...payload,
-+      joinedAt: Date.now()
-+    }, { merge: true });
-+  },
-+
-+  sendInvite: async (roomId: string, payload: { fromId: string; fromName: string; toId: string; toName: string }) => {
-+    await addDoc(collection(db, 'visit_rooms', roomId, 'invites'), {
-+      ...payload,
-+      status: 'pending',
-+      createdAt: Date.now()
++export const chatService = {
++  listenMessages: (chatId: string, cb: (messages: any[]) => void) => {
++    const qMessages = query(
++      collection(db, 'direct_messages'),
++      where('chatId', '==', chatId),
++      orderBy('timestamp', 'asc')
++    );
++    return onSnapshot(qMessages, (snapshot) => {
++      cb(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
 +    });
 +  },
 +
-+  updateInviteStatus: async (roomId: string, inviteId: string, status: 'accepted' | 'rejected') => {
-+    await updateDoc(doc(db, 'visit_rooms', roomId, 'invites', inviteId), {
-+      status,
-+      respondedAt: Date.now()
++  markMessageRead: async (messageId: string, uid: string) => {
++    await updateDoc(doc(db, 'direct_messages', messageId), {
++      readBy: arrayUnion(uid)
 +    });
 +  },
 +
-+  onParticipants: (roomId: string, cb: (names: string[]) => void) =>
-+    onSnapshot(query(collection(db, 'visit_rooms', roomId, 'participants')), (snapshot) => {
-+      cb(snapshot.docs.map(d => d.data().heroName as string).filter(Boolean));
-+    }),
++  sendDirectMessage: async (messageData: any) => {
++    await addDoc(collection(db, 'direct_messages'), messageData);
++  },
 +
-+  onPendingInvitesForUser: (roomId: string, uid: string, cb: (invite: any | null) => void) =>
-+    onSnapshot(query(collection(db, 'visit_rooms', roomId, 'invites'), where('toId', '==', uid), where('status', '==', 'pending')), (snapshot) => {
-+      cb(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))[0] || null);
-+    }),
++  updateChatMeta: async (chatId: string, data: any) => {
++    await setDoc(doc(db, 'chats', chatId), data, { merge: true });
++  },
 +
-+  startVideoCall: async (roomId: string, payload: { callerId: string; callerName: string; callerAvatar: any; calleeId: string }) => {
-+    return addDoc(collection(db, 'visit_rooms', roomId, 'calls'), {
-+      chatId: `visit_${roomId}`,
-+      ...payload,
-+      type: 'video',
-+      status: 'ringing',
-+      createdAt: Date.now()
++  setTyping: async (chatId: string, uid: string, isTyping: boolean) => {
++    await setDoc(doc(db, 'chats', chatId), { typing: isTyping ? arrayUnion(uid) : arrayRemove(uid) }, { merge: true });
++  },
++
++  listenIncomingCalls: (chatId: string, calleeId: string, cb: (call: any | null) => void) => {
++    const qCalls = query(
++      collection(db, 'chats', chatId, 'calls'),
++      where('calleeId', '==', calleeId),
++      where('status', '==', 'ringing')
++    );
++    return onSnapshot(qCalls, (snapshot) => {
++      if (!snapshot.empty) cb({ ...snapshot.docs[0].data(), id: snapshot.docs[0].id });
++      else cb(null);
 +    });
 +  },
 +
-+  updateCallStatus: async (roomId: string, callId: string, status: 'accepted' | 'rejected') => {
-+    await updateDoc(doc(db, 'visit_rooms', roomId, 'calls', callId), {
-+      status,
-+      ...(status === 'accepted' ? { acceptedAt: Date.now() } : { endedAt: Date.now() })
-+    });
++  startCall: async (chatId: string, payload: any) => addDoc(collection(db, 'chats', chatId, 'calls'), payload),
++  updateCall: async (chatId: string, callId: string, data: any) => updateDoc(doc(db, 'chats', chatId, 'calls', callId), data),
++  findActiveCalls: async (chatId: string, calleeId: string) => {
++    const qCalls = query(
++      collection(db, 'chats', chatId, 'calls'),
++      where('calleeId', '==', calleeId),
++      where('status', 'in', ['ringing', 'accepted', 'connected'])
++    );
++    return getDocs(qCalls);
 +  },
 +
-+  sendRoomMessage: async (roomId: string, payload: { senderId: string; senderName: string; text: string }) => {
-+    await addDoc(collection(db, 'visit_rooms', roomId, 'messages'), {
-+      ...payload,
-+      timestamp: Date.now()
-+    });
-+  },
++  sendFriendRequest: async (data: any) => addDoc(collection(db, 'friend_requests'), data),
++  updateFriendRequest: async (requestId: string, status: 'accepted' | 'declined') =>
++    updateDoc(doc(db, 'friend_requests', requestId), { status }),
++  listenFriendRequests: (cb: (requests: any[]) => void) =>
++    onSnapshot(query(collection(db, 'friend_requests')), (snapshot) => cb(snapshot.docs.map(d => ({ id: d.id, ...d.data() })))),
 +
-+  onRoomMessages: (roomId: string, cb: (messages: any[]) => void) =>
-+    onSnapshot(query(collection(db, 'visit_rooms', roomId, 'messages')), (snapshot) => {
-+      const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
-+        .sort((a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0));
-+      cb(msgs);
-+    }),
-+
-+  onIncomingCallsForUser: (roomId: string, uid: string, cb: (call: CallSession | null) => void) =>
-+    onSnapshot(query(collection(db, 'visit_rooms', roomId, 'calls'), where('status', 'in', ['ringing', 'accepted'])), (snapshot) => {
-+      const call = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CallSession))
-+        .find(c => c.calleeId === uid && c.status === 'ringing');
-+      cb(call || null);
-+    }),
-+
-+  createSafetyReport: async (payload: { visitId: string; reporterId: string; reporterName: string }) => {
-+    await addDoc(collection(db, 'safety_reports'), {
-+      ...payload,
-+      createdAt: Date.now(),
-+      status: 'new'
-+    });
-+  }
++  updateReactions: async (messageId: string, reactions: any) =>
++    updateDoc(doc(db, 'direct_messages', messageId), { reactions }),
++  editMessage: async (messageId: string, text: string) =>
++    updateDoc(doc(db, 'direct_messages', messageId), { text, editedAt: Date.now() })
 +};
  
 EOF
