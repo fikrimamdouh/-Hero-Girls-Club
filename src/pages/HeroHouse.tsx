@@ -295,54 +295,56 @@ export default function HeroHouse() {
     if (!houseSession?.callActive) setShowCall(false);
   }, [houseSession?.callActive]);
 
-  /* ─── GROUP VISIT: join/leave house_session + group chat ─── */
+  /* ─── GROUP VISIT: join/leave (stored in children_profiles.houseConfig.liveSession) ─── */
   useEffect(() => {
     if (!hostProfile || !activeChild) return;
     const hostUid = hostProfile.uid;
     const isCurrentHost = activeChild.uid === hostUid;
-    const sessionRef = doc(db, 'house_sessions', hostUid);
+    const hostRef = doc(db, 'children_profiles', hostUid);
 
-    /* Initialize or update session */
+    /* Write join info — stored inside houseConfig.liveSession (uses existing deployed rules) */
     if (isCurrentHost) {
-      setDoc(sessionRef, {
-        hostUid, hostHeroName: hostProfile.heroName || hostProfile.name,
-        hostName: hostProfile.name, hostAvatar: hostProfile.avatar,
-        visitors: {}, callActive: false, updatedAt: Date.now()
-      }, { merge: true }).catch(() => {});
+      updateDoc(hostRef, {
+        'houseConfig.liveSession': {
+          hostUid, hostHeroName: hostProfile.heroName || hostProfile.name,
+          callActive: false, visitors: {}, updatedAt: Date.now()
+        }
+      }).catch(() => {});
     } else {
       const visitor: HouseVisitor = {
         uid: activeChild.uid, heroName: activeChild.heroName || activeChild.name,
         name: activeChild.name, avatar: activeChild.avatar, joinedAt: Date.now()
       };
-      updateDoc(sessionRef, {
-        [`visitors.${activeChild.uid}`]: visitor, updatedAt: Date.now()
-      }).catch(() =>
-        setDoc(sessionRef, {
-          hostUid, hostHeroName: hostProfile.heroName || hostProfile.name,
-          hostName: hostProfile.name, hostAvatar: hostProfile.avatar,
-          visitors: { [activeChild.uid]: visitor },
-          callActive: false, updatedAt: Date.now()
-        }, { merge: true }).catch(() => {})
-      );
+      updateDoc(hostRef, {
+        [`houseConfig.liveSession.visitors.${activeChild.uid}`]: visitor,
+        'houseConfig.liveSession.updatedAt': Date.now()
+      }).catch(() => {});
     }
 
-    /* Subscribe to house session */
-    const unsubSession = onSnapshot(sessionRef, snap => {
-      if (snap.exists()) setHouseSession(snap.data() as HouseSession);
+    /* Subscribe to host's profile for live session updates */
+    const unsubSession = onSnapshot(hostRef, snap => {
+      if (snap.exists()) {
+        const data = snap.data() as ChildProfile;
+        const ls = (data.houseConfig as Record<string, unknown>)?.liveSession;
+        if (ls) setHouseSession(ls as HouseSession);
+      }
     }, () => {});
 
-    /* Subscribe to house_chat */
+    /* Subscribe to group chat — uses existing chat_messages collection (allow create: if true) */
+    /* Query by houseId only (no orderBy) to avoid composite index requirement; sort client-side */
     const chatQ = query(
-      collection(db, 'house_chat'),
-      where('houseId', '==', hostUid),
-      orderBy('timestamp', 'asc')
+      collection(db, 'chat_messages'),
+      where('houseId', '==', hostUid)
     );
     const unsubChat = onSnapshot(chatQ, snap => {
-      setHouseMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as HouseMessage)));
+      const msgs = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as HouseMessage))
+        .sort((a, b) => a.timestamp - b.timestamp);
+      setHouseMessages(msgs);
       setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }, () => {});
 
-    /* Load friends list for invite panel */
+    /* Load friends list for invite panel (host only) */
     if (isCurrentHost) {
       getDocs(query(collection(db, 'friend_requests'),
         where('status', '==', 'accepted')
@@ -370,8 +372,9 @@ export default function HeroHouse() {
       unsubChat();
       /* Remove visitor on unmount */
       if (!isCurrentHost) {
-        updateDoc(sessionRef, {
-          [`visitors.${activeChild.uid}`]: deleteField(), updatedAt: Date.now()
+        updateDoc(hostRef, {
+          [`houseConfig.liveSession.visitors.${activeChild.uid}`]: deleteField(),
+          'houseConfig.liveSession.updatedAt': Date.now()
         }).catch(() => {});
       }
     };
@@ -655,16 +658,18 @@ export default function HeroHouse() {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !activeChild || !hostProfile) return;
-    const msg: Omit<HouseMessage, 'id'> = {
-      houseId: hostProfile.uid,
+    /* Write to chat_messages — existing collection with allow create: if true */
+    const msg = {
+      houseId: hostProfile.uid,          /* group house chat identifier */
       senderId: activeChild.uid,
+      senderName: activeChild.heroName || activeChild.name,
       senderHeroName: activeChild.heroName || activeChild.name,
-      senderAvatar: activeChild.avatar,
+      senderAvatar: activeChild.avatar || null,
       text: newMessage.trim(),
       timestamp: Date.now()
     };
     try {
-      await addDoc(collection(db, 'house_chat'), msg);
+      await addDoc(collection(db, 'chat_messages'), msg);
       setNewMessage(''); playSound('pop');
     } catch { toast.error('خطأ في إرسال الرسالة'); }
   };
@@ -673,8 +678,10 @@ export default function HeroHouse() {
   const handleToggleCall = async () => {
     if (!hostProfile || !isHost) return;
     const newState = !houseSession?.callActive;
-    await updateDoc(doc(db, 'house_sessions', hostProfile.uid), {
-      callActive: newState, updatedAt: Date.now()
+    /* Update liveSession.callActive inside children_profiles (deployed rules) */
+    await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
+      'houseConfig.liveSession.callActive': newState,
+      'houseConfig.liveSession.updatedAt': Date.now()
     }).catch(() => {});
     toast.success(newState ? 'تم تشغيل مكالمة الفيديو! 📹' : 'تم إنهاء المكالمة');
   };

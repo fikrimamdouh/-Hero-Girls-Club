@@ -41,20 +41,22 @@ export default function VillageView() {
     const stored = localStorage.getItem('active_child');
     if (stored) setActiveChild(JSON.parse(stored) as ChildProfile);
 
+    /* Single subscription: children_profiles contains both profile + liveSession */
     const unsub = onSnapshot(
       query(collection(db, 'children_profiles'), where('status', '==', 'approved')),
-      snap => setAllChildren(snap.docs.map(d => d.data() as ChildProfile)),
-      err => handleFirestoreError(err, OperationType.GET, 'children_profiles')
-    );
-
-    const unsubSessions = onSnapshot(
-      collection(db, 'house_sessions'),
       snap => {
+        const children: ChildProfile[] = [];
         const map: Record<string, HouseSession> = {};
-        snap.docs.forEach(d => { map[d.id] = d.data() as HouseSession; });
+        snap.docs.forEach(d => {
+          const child = d.data() as ChildProfile;
+          children.push(child);
+          const ls = (child.houseConfig as Record<string, unknown> | undefined)?.liveSession;
+          if (ls) map[child.uid] = ls as HouseSession;
+        });
+        setAllChildren(children);
         setSessions(map);
       },
-      () => {}
+      err => handleFirestoreError(err, OperationType.GET, 'children_profiles')
     );
 
     const unsubOnline = onSnapshot(
@@ -71,7 +73,7 @@ export default function VillageView() {
       () => {}
     );
 
-    return () => { unsub(); unsubSessions(); unsubOnline(); };
+    return () => { unsub(); unsubOnline(); };
   }, []);
 
   const filtered = allChildren.filter(c => {
