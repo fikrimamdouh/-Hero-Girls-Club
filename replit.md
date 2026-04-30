@@ -53,8 +53,23 @@ Set these as secrets in the Replit environment:
 **Key UI Files:**
 - `src/pages/LandingPage.tsx` — Login/registration page (fully redesigned)
 - `src/pages/ChildDashboard.tsx` — Main child dashboard (fully redesigned)
+- `src/pages/HeroHouse.tsx` — Interactive hero house with 4 rooms, 35+ furniture items, wardrobe panel, auto-save
 - `src/index.css` — Global styles with jewel-tone design tokens
 - `src/services/aiService.ts` — Lazy Gemini client initialization (prevents browser crash when key absent)
+
+## HeroHouse Features (بيت البطلة)
+
+- **4 Rooms**: bedroom, living room, garden, kitchen — each with unique wallpaper/floor defaults
+- **35+ Furniture items** organized in 5 categories (bedroom, living, garden, kitchen, toys)
+- **8 wallpaper + 8 floor** options per room, saved per room in Firestore
+- **Wardrobe panel**: 4 tabs (dresses 10, hair 8, accessories 8, skin colors 6), live avatar preview, save to Firestore
+- **Drag & resize furniture**: drag to position, scale up/down, rotate, delete with hover controls
+- **Debounced auto-save**: 800ms debounce on drag, instant save flash indicator
+- **Magic Decorate**: AI-powered room decoration using Gemini API
+- **Action bar**: 10 fun social actions (tea, music, dance, heart, etc.)
+- **Chat widget**: real-time chat for visit sessions
+- **Tic-tac-toe** game for social visits
+- **Data model**: furniture stored in `houseConfig.rooms.{roomId}.furniture` in children_profiles Firestore document
 
 ## Replit Migration Notes
 

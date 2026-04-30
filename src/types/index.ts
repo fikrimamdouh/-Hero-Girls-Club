@@ -19,12 +19,20 @@ export interface HouseItem {
     room?: 'sleep' | 'play' | 'study';
 }
 
+export interface RoomConfig {
+  wallpaper: string;
+  floor: string;
+  furniture: HouseItem[];
+}
+
 export interface HouseConfig {
   theme: 'castle' | 'garden' | 'space' | 'underwater' | 'cloud';
   furniture: HouseItem[];
   decorations: HouseItem[];
   wallpaper: string;
   floor: string;
+  currentRoom?: 'bedroom' | 'living' | 'garden' | 'kitchen';
+  rooms?: Partial<Record<'bedroom' | 'living' | 'garden' | 'kitchen', RoomConfig>>;
 }
 
 export interface ChildProfile {

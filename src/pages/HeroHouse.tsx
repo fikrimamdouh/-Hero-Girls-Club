@@ -1,97 +1,245 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, LogOut, Sparkles, MessageCircle, Star, Heart, Shield, Users, Coffee, Cookie, Music, PartyPopper, Video, Mic, MicOff, VideoOff, Camera, Palette, Wand2, Plus, Trash2, Gamepad2, X, Smile, Minus, RotateCw, ChevronUp, ChevronDown, ArrowLeft } from 'lucide-react';
+import {
+  Send, LogOut, Sparkles, MessageCircle, Star, Heart, Shield, Users,
+  Coffee, Cookie, Music, PartyPopper, Video, Mic, MicOff, VideoOff,
+  Camera, Palette, Wand2, Plus, Trash2, Gamepad2, X, Smile, Minus,
+  RotateCw, ChevronUp, ChevronDown, ArrowLeft, Home, Shirt, Save, Check
+} from 'lucide-react';
 import { db } from '../firebase';
-import { doc, onSnapshot, collection, addDoc, query, where, orderBy, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import {
+  doc, onSnapshot, collection, addDoc, query, where, orderBy,
+  updateDoc, getDoc
+} from 'firebase/firestore';
 import { ChildProfile, VisitRequest, ChatMessage, AvatarConfig, HouseItem, HouseConfig } from '../types';
 import { toast } from 'sonner';
 import { GoogleGenAI } from '@google/genai';
-
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
-const THEMES = {
-  castle: { bg: 'from-pink-100 to-purple-200', floor: 'bg-stone-200', wall: 'bg-pink-50' },
-  garden: { bg: 'from-green-100 to-blue-100', floor: 'bg-emerald-200', wall: 'bg-green-50' },
-  space: { bg: 'from-indigo-900 to-purple-900', floor: 'bg-slate-800', wall: 'bg-indigo-950' },
-  underwater: { bg: 'from-blue-400 to-cyan-600', floor: 'bg-blue-800', wall: 'bg-blue-300' },
-  cloud: { bg: 'from-sky-100 to-white', floor: 'bg-white/80', wall: 'bg-sky-50' }
+/* ─── ROOM DEFINITIONS ──────────────────────────────────── */
+type RoomId = 'bedroom' | 'living' | 'garden' | 'kitchen';
+
+const ROOMS: Record<RoomId, { label: string; icon: string; wall: string; floor: string; defaultItems: string[] }> = {
+  bedroom: {
+    label: 'غرفة النوم', icon: '🛏️',
+    wall: 'bg-gradient-to-b from-pink-100 to-rose-200',
+    floor: 'bg-rose-100',
+    defaultItems: ['🛏️', '💡', '🪞']
+  },
+  living: {
+    label: 'الصالة', icon: '🛋️',
+    wall: 'bg-gradient-to-b from-amber-50 to-yellow-100',
+    floor: 'bg-amber-100',
+    defaultItems: ['🛋️', '📺', '🪴']
+  },
+  garden: {
+    label: 'الحديقة', icon: '🌷',
+    wall: 'bg-gradient-to-b from-emerald-100 to-teal-200',
+    floor: 'bg-emerald-300',
+    defaultItems: ['🌳', '🌸', '⛲']
+  },
+  kitchen: {
+    label: 'المطبخ', icon: '🍳',
+    wall: 'bg-gradient-to-b from-sky-50 to-cyan-100',
+    floor: 'bg-orange-100',
+    defaultItems: ['🍳', '🎂', '🫖']
+  }
 };
 
+/* ─── FURNITURE CATEGORIES ───────────────────────────────── */
+const FURNITURE_CATEGORIES = [
+  {
+    id: 'bedroom', label: 'نوم', icon: '🛏️',
+    items: [
+      { type: 'bed', emoji: '🛏️' }, { type: 'lamp', emoji: '💡' },
+      { type: 'mirror', emoji: '🪞' }, { type: 'clock', emoji: '⏰' },
+      { type: 'pillow', emoji: '🛋️' }, { type: 'window', emoji: '🖼️' },
+      { type: 'curtain', emoji: '🎐' }, { type: 'teddy', emoji: '🧸' },
+    ]
+  },
+  {
+    id: 'living', label: 'صالة', icon: '🛋️',
+    items: [
+      { type: 'sofa', emoji: '🛋️' }, { type: 'tv', emoji: '📺' },
+      { type: 'shelf', emoji: '📚' }, { type: 'plant', emoji: '🪴' },
+      { type: 'lamp2', emoji: '🕯️' }, { type: 'vase', emoji: '🫙' },
+      { type: 'rug', emoji: '🟫' }, { type: 'chair', emoji: '🪑' },
+    ]
+  },
+  {
+    id: 'garden', label: 'حديقة', icon: '🌷',
+    items: [
+      { type: 'tree', emoji: '🌳' }, { type: 'flower', emoji: '🌸' },
+      { type: 'fountain', emoji: '⛲' }, { type: 'mushroom', emoji: '🍄' },
+      { type: 'butterfly', emoji: '🦋' }, { type: 'rainbow', emoji: '🌈' },
+      { type: 'sun', emoji: '☀️' }, { type: 'cloud', emoji: '🌥️' },
+    ]
+  },
+  {
+    id: 'kitchen', label: 'مطبخ', icon: '🍳',
+    items: [
+      { type: 'stove', emoji: '🍳' }, { type: 'cake', emoji: '🎂' },
+      { type: 'tea', emoji: '🫖' }, { type: 'cookie', emoji: '🍪' },
+      { type: 'fruit', emoji: '🍓' }, { type: 'utensils', emoji: '🍽️' },
+      { type: 'fridge', emoji: '🧊' }, { type: 'bowl', emoji: '🥣' },
+    ]
+  },
+  {
+    id: 'toys', label: 'ألعاب', icon: '🎮',
+    items: [
+      { type: 'bear', emoji: '🧸' }, { type: 'blocks', emoji: '🧩' },
+      { type: 'ball', emoji: '⚽' }, { type: 'doll', emoji: '🪆' },
+      { type: 'art', emoji: '🎨' }, { type: 'magic', emoji: '🪄' },
+      { type: 'robot', emoji: '🤖' }, { type: 'crown', emoji: '👑' },
+    ]
+  }
+];
+
+/* ─── WARDROBE ───────────────────────────────────────────── */
+const WARDROBE = {
+  dresses: [
+    { id: 'd1', emoji: '👗', label: 'فستان أميرة' },
+    { id: 'd2', emoji: '🥻', label: 'فستان ساري' },
+    { id: 'd3', emoji: '👘', label: 'كيمونو' },
+    { id: 'd4', emoji: '🩱', label: 'رياضية' },
+    { id: 'd5', emoji: '💃', label: 'فستان رقص' },
+    { id: 'd6', emoji: '🧚', label: 'جنية' },
+    { id: 'd7', emoji: '🦸‍♀️', label: 'بدلة بطلة' },
+    { id: 'd8', emoji: '👸', label: 'ملكة' },
+    { id: 'd9', emoji: '🧜‍♀️', label: 'حورية' },
+    { id: 'd10', emoji: '🌸', label: 'فستان زهور' },
+  ],
+  hair: [
+    { id: 'h1', emoji: '👧', label: 'شعر قصير' },
+    { id: 'h2', emoji: '👩', label: 'شعر طويل' },
+    { id: 'h3', emoji: '👩‍🦱', label: 'مجعد' },
+    { id: 'h4', emoji: '👩‍🦰', label: 'أحمر' },
+    { id: 'h5', emoji: '👩‍🦳', label: 'أبيض' },
+    { id: 'h6', emoji: '🧝‍♀️', label: 'جنية' },
+    { id: 'h7', emoji: '🧑‍🎤', label: 'فنانة' },
+    { id: 'h8', emoji: '👱‍♀️', label: 'أشقر' },
+  ],
+  accessories: [
+    { id: 'a1', emoji: '🎀', label: 'ربطة' },
+    { id: 'a2', emoji: '👑', label: 'تاج' },
+    { id: 'a3', emoji: '💎', label: 'ألماس' },
+    { id: 'a4', emoji: '🌟', label: 'نجمة' },
+    { id: 'a5', emoji: '🦋', label: 'فراشة' },
+    { id: 'a6', emoji: '🌈', label: 'قوس قزح' },
+    { id: 'a7', emoji: '🪄', label: 'عصا سحر' },
+    { id: 'a8', emoji: '🌸', label: 'زهرة' },
+  ],
+  skinColor: [
+    { id: 's1', class: 'bg-amber-100', label: 'فاتح جداً' },
+    { id: 's2', class: 'bg-amber-200', label: 'فاتح' },
+    { id: 's3', class: 'bg-orange-200', label: 'أسمر خفيف' },
+    { id: 's4', class: 'bg-orange-300', label: 'أسمر' },
+    { id: 's5', class: 'bg-amber-700', label: 'داكن' },
+    { id: 's6', class: 'bg-pink-100', label: 'وردي' },
+  ]
+};
+
+type WardrobeTab = 'dresses' | 'hair' | 'accessories' | 'skinColor';
+
+/* ─── WALLPAPER & FLOOR OPTIONS (kept as-is) ────────────── */
 const WALLPAPER_OPTIONS = [
   { id: 'pink-stars', class: 'bg-gradient-to-b from-pink-100 to-rose-200', label: 'نجوم وردية', icon: '⭐' },
   { id: 'blue-clouds', class: 'bg-gradient-to-b from-sky-100 to-blue-200', label: 'غيوم زرقاء', icon: '☁️' },
   { id: 'purple-magic', class: 'bg-gradient-to-b from-purple-100 to-indigo-200', label: 'سحر بنفسجي', icon: '✨' },
   { id: 'green-nature', class: 'bg-gradient-to-b from-emerald-100 to-teal-200', label: 'طبيعة خضراء', icon: '🌿' },
   { id: 'yellow-sun', class: 'bg-gradient-to-b from-amber-50 to-yellow-100', label: 'شمس مشرقة', icon: '☀️' },
-  { id: 'night-stars', class: 'bg-gradient-to-b from-slate-900 to-indigo-950', label: 'ليل مرصع بالنجوم', icon: '🌙' },
+  { id: 'night-stars', class: 'bg-gradient-to-b from-slate-900 to-indigo-950', label: 'ليل نجوم', icon: '🌙' },
+  { id: 'candy', class: 'bg-gradient-to-b from-rose-100 to-fuchsia-200', label: 'حلوى', icon: '🍬' },
+  { id: 'ocean', class: 'bg-gradient-to-b from-cyan-100 to-blue-300', label: 'محيط', icon: '🌊' },
 ];
 
 const FLOOR_OPTIONS = [
   { id: 'stone', class: 'bg-stone-200', label: 'حجر', icon: '🧱' },
   { id: 'wood', class: 'bg-amber-200', label: 'خشب', icon: '🪵' },
   { id: 'grass', class: 'bg-emerald-200', label: 'عشب', icon: '🌱' },
-  { id: 'carpet', class: 'bg-rose-200', label: 'سجاد وردي', icon: '🧶' },
+  { id: 'carpet', class: 'bg-rose-200', label: 'سجاد', icon: '🧶' },
   { id: 'cloud', class: 'bg-white/80', label: 'سحاب', icon: '☁️' },
   { id: 'water', class: 'bg-blue-200', label: 'ماء', icon: '💧' },
+  { id: 'sand', class: 'bg-yellow-200', label: 'رمل', icon: '🏖️' },
+  { id: 'marble', class: 'bg-slate-100', label: 'رخام', icon: '⬜' },
 ];
 
-const FURNITURE_OPTIONS = [
-  { type: 'chair', emoji: '🪑' },
-  { type: 'table', emoji: '🛋️' },
-  { type: 'bed', emoji: '🛏️' },
-  { type: 'lamp', emoji: '💡' },
-  { type: 'plant', emoji: '🪴' },
-  { type: 'toy', emoji: '🧸' },
-  { type: 'mirror', emoji: '🪞' },
-  { type: 'window', emoji: '🖼️' }
-];
+/* ─── Doll component ─────────────────────────────────────── */
+function Doll({ avatar, isDancing = false, size = 'md' }: { avatar: AvatarConfig; isDancing?: boolean; size?: 'sm' | 'md' | 'lg' }) {
+  const sizes = { sm: 'text-2xl', md: 'text-5xl', lg: 'text-7xl' };
+  const bgSize = { sm: 'w-12 h-12', md: 'w-20 h-20', lg: 'w-28 h-28' };
+  return (
+    <motion.div
+      animate={isDancing ? { rotate: [-10, 10, -10, 10, 0], y: [0, -10, 0, -10, 0] } : {}}
+      transition={{ duration: 0.5, repeat: isDancing ? Infinity : 0 }}
+      className="flex flex-col items-center gap-1"
+    >
+      <div className={`relative ${bgSize[size]} ${avatar.color || 'bg-pink-200'} rounded-full flex items-center justify-center overflow-hidden border-4 border-white shadow-xl`}>
+        <span className={`${sizes[size]} leading-none mt-1`}>{avatar.hairStyle || '👧'}</span>
+        {avatar.wings && <span className="absolute -left-2 text-lg">{avatar.wings}</span>}
+      </div>
+      <div className="flex items-center gap-1">
+        <span className={sizes[size === 'lg' ? 'md' : 'sm']}>{avatar.dressStyle || '👗'}</span>
+        {avatar.accessory && <span className="text-lg">{avatar.accessory}</span>}
+      </div>
+      {avatar.shoes && <span className="text-sm">{avatar.shoes}</span>}
+    </motion.div>
+  );
+}
 
+/* ─── MAIN COMPONENT ─────────────────────────────────────── */
 export default function HeroHouse() {
   const { visitId } = useParams<{ visitId: string }>();
   const navigate = useNavigate();
+
+  /* — core state — */
   const [visit, setVisit] = useState<VisitRequest | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [activeChild, setActiveChild] = useState<ChildProfile | null>(null);
   const [hostProfile, setHostProfile] = useState<ChildProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showMirror, setShowMirror] = useState(false);
+  const [isActionBusy, setIsActionBusy] = useState(false);
+
+  /* — UI panels — */
+  const [showChat, setShowChat] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [isMagicDecorating, setIsMagicDecorating] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOff, setIsVideoOff] = useState(false);
-  const [showChat, setShowChat] = useState(true);
-  const [isActionBusy, setIsActionBusy] = useState(false);
-  const [selectedWardrobe, setSelectedWardrobe] = useState<'princess' | 'garden' | 'star' | 'ocean'>('princess');
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [showWardrobe, setShowWardrobe] = useState(false);
+  const [wardrobeTab, setWardrobeTab] = useState<WardrobeTab>('dresses');
+  const [furnitureCategory, setFurnitureCategory] = useState(0);
 
+  /* — room system — */
+  const [activeRoom, setActiveRoom] = useState<RoomId>('bedroom');
+
+  /* — wardrobe preview — */
+  const [previewAvatar, setPreviewAvatar] = useState<AvatarConfig | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const saveDebounce = useRef<NodeJS.Timeout | null>(null);
+
+  /* ─── LOAD DATA ─────────────────────────────────────────── */
   useEffect(() => {
     const activeChildStr = localStorage.getItem('active_child');
-    if (!activeChildStr) {
-      navigate('/');
-      return;
-    }
+    if (!activeChildStr) { navigate('/'); return; }
     const currentChild = JSON.parse(activeChildStr) as ChildProfile;
     setActiveChild(currentChild);
+    setPreviewAvatar(currentChild.avatar);
 
     if (!visitId) return;
 
     if (visitId === 'self') {
       setVisit({
-        id: 'self',
-        fromId: currentChild.uid,
-        fromName: currentChild.name,
-        fromHeroName: currentChild.heroName,
-        fromAvatar: currentChild.avatar,
-        toId: currentChild.uid,
-        toName: currentChild.name,
-        toAvatar: currentChild.avatar,
-        status: 'accepted',
-        timestamp: Date.now()
+        id: 'self', fromId: currentChild.uid, fromName: currentChild.name,
+        fromHeroName: currentChild.heroName, fromAvatar: currentChild.avatar,
+        toId: currentChild.uid, toName: currentChild.name, toAvatar: currentChild.avatar,
+        status: 'accepted', timestamp: Date.now()
       });
       setHostProfile(currentChild);
+      setPreviewAvatar(currentChild.avatar);
       setLoading(false);
       return;
     }
@@ -99,69 +247,32 @@ export default function HeroHouse() {
     if (visitId.startsWith('view_')) {
       const hostUid = visitId.replace('view_', '');
       setVisit({
-        id: visitId,
-        fromId: currentChild.uid,
-        fromName: currentChild.name,
-        fromHeroName: currentChild.heroName,
-        fromAvatar: currentChild.avatar,
-        toId: hostUid,
-        toName: 'صديقتكِ',
-        status: 'accepted',
-        timestamp: Date.now()
+        id: visitId, fromId: currentChild.uid, fromName: currentChild.name,
+        fromHeroName: currentChild.heroName, fromAvatar: currentChild.avatar,
+        toId: hostUid, toName: 'صديقتكِ', status: 'accepted', timestamp: Date.now()
       });
-      
-      const fetchHost = async () => {
-        const hDoc = await getDoc(doc(db, 'children_profiles', hostUid));
+      getDoc(doc(db, 'children_profiles', hostUid)).then(hDoc => {
         if (hDoc.exists()) {
           const data = hDoc.data() as ChildProfile;
           setHostProfile(data);
           setVisit(prev => prev ? { ...prev, toName: data.heroName || data.name, toAvatar: data.avatar } : null);
         }
         setLoading(false);
-      };
-      fetchHost();
+      });
       return;
     }
 
-    const unsubscribeVisit = onSnapshot(doc(db, 'visit_requests', visitId), async (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data() as VisitRequest;
-        
-        // Handle invalid documents (e.g. created by merge without full data)
-        if (!data.toId || !data.fromId) {
-          console.error('HeroHouse: Invalid visit request data', data);
-          toast.error('بيانات الزيارة غير مكتملة أو تالفة');
-          navigate('/child');
-          return;
-        }
-
+    const unsubVisit = onSnapshot(doc(db, 'visit_requests', visitId), async (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as VisitRequest;
+        if (!data.toId || !data.fromId) { toast.error('بيانات الزيارة غير مكتملة'); navigate('/child'); return; }
         setVisit(data);
-        
-        // Fetch host profile for house config
         if (!hostProfile || hostProfile.uid !== data.toId) {
           const hDoc = await getDoc(doc(db, 'children_profiles', data.toId));
-          if (hDoc.exists()) {
-            setHostProfile(hDoc.data() as ChildProfile);
-          }
+          if (hDoc.exists()) setHostProfile(hDoc.data() as ChildProfile);
         }
-
-        if (data.status === 'ended') {
-          toast.info('انتهت الزيارة السحرية، نراكِ قريباً!');
-          navigate('/child');
-        }
-
-        // Play entry sound if just joined
-        if (loading) {
-          playSound('knock');
-          if (data.toId === activeChild?.uid && data.fromId !== activeChild?.uid) {
-            toast.success(`البطلة ${data.fromHeroName} وصلت لزيارتكِ! ✨`);
-            const welcomeAudio = new Audio('https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3');
-            welcomeAudio.play().catch(() => {});
-          }
-        }
-      } else {
-        if (visitId !== 'self') navigate('/child');
-      }
+        if (data.status === 'ended') { toast.info('انتهت الزيارة!'); navigate('/child'); }
+      } else { navigate('/child'); }
       setLoading(false);
     }, (err) => handleFirestoreError(err, OperationType.GET, `visit_requests/${visitId}`));
 
@@ -170,961 +281,753 @@ export default function HeroHouse() {
       where('visitId', '==', visitId),
       orderBy('timestamp', 'asc')
     );
-    const unsubscribeChat = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatMessage));
-      setMessages(msgs);
-      setTimeout(() => {
-        scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
+    const unsubChat = onSnapshot(q, (snap) => {
+      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage)));
+      setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }, (err) => handleFirestoreError(err, OperationType.GET, 'chat_messages'));
 
-    return () => {
-      unsubscribeVisit();
-      unsubscribeChat();
-    };
+    return () => { unsubVisit(); unsubChat(); };
   }, [visitId, navigate]);
 
+  const isLocalVisitMode = visitId === 'self' || !!visitId?.startsWith('view_');
+  const isHost = activeChild?.uid === hostProfile?.uid;
+
+  /* ─── HELPERS ────────────────────────────────────────────── */
   const playSound = (type: 'knock' | 'magic' | 'pop') => {
     const sounds = {
       knock: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
       magic: 'https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3',
       pop: 'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'
     };
-    const audio = new Audio(sounds[type]);
-    audio.play().catch(() => {});
+    new Audio(sounds[type]).play().catch(() => {});
   };
 
-  const wardrobes = {
-    princess: [
-      { name: 'فستان أميرة', emoji: '👗' },
-      { name: 'تاج لؤلؤ', emoji: '👑' },
-      { name: 'حذاء لامع', emoji: '👠' },
-      { name: 'حقيبة وردية', emoji: '👜' },
-    ],
-    garden: [
-      { name: 'فستان زهور', emoji: '🌸' },
-      { name: 'قبعة شمس', emoji: '🧢' },
-      { name: 'حذاء مريح', emoji: '👟' },
-      { name: 'إكليل', emoji: '💐' },
-    ],
-    star: [
-      { name: 'فستان نجوم', emoji: '✨' },
-      { name: 'كعب فضي', emoji: '🪩' },
-      { name: 'وشاح بنفسجي', emoji: '🧣' },
-      { name: 'نجمة صغيرة', emoji: '⭐' },
-    ],
-    ocean: [
-      { name: 'فستان بحر', emoji: '🌊' },
-      { name: 'صدفة', emoji: '🐚' },
-      { name: 'لؤلؤة', emoji: '🫧' },
-      { name: 'أحذية زرقاء', emoji: '🥿' },
-    ],
+  const triggerSavedFlash = () => {
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2000);
   };
 
-  const isLocalVisitMode = visitId === 'self' || !!visitId?.startsWith('view_');
+  /* ─── ROOM helpers ───────────────────────────────────────── */
+  const getCurrentRoomConfig = () => {
+    return (hostProfile?.houseConfig as any)?.rooms?.[activeRoom] || null;
+  };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !activeChild || !visitId) return;
+  const getCurrentRoomFurniture = (): HouseItem[] => {
+    const roomConfig = getCurrentRoomConfig();
+    return roomConfig?.furniture || [];
+  };
 
+  const getCurrentWallpaper = () => {
+    const roomConfig = getCurrentRoomConfig();
+    return roomConfig?.wallpaper || ROOMS[activeRoom].wall;
+  };
+
+  const getCurrentFloor = () => {
+    const roomConfig = getCurrentRoomConfig();
+    return roomConfig?.floor || ROOMS[activeRoom].floor;
+  };
+
+  /* ─── FURNITURE HANDLERS ─────────────────────────────────── */
+  const handleAddItem = async (item: Partial<HouseItem>) => {
+    if (!hostProfile || !isHost) return;
+    const newItem: HouseItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      type: item.type || 'furniture', emoji: item.emoji || '✨',
+      x: 30 + Math.random() * 40, y: 40 + Math.random() * 30,
+      scale: 1.2, rotation: 0
+    };
+    const existingFurniture = getCurrentRoomFurniture();
     try {
-      await addDoc(collection(db, 'chat_messages'), {
-        visitId,
-        senderId: activeChild.uid,
-        senderName: activeChild.heroName || activeChild.name,
-        text: newMessage,
-        timestamp: Date.now()
+      setIsSaving(true);
+      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
+        [`houseConfig.rooms.${activeRoom}.furniture`]: [...existingFurniture, newItem]
       });
-      setNewMessage('');
       playSound('pop');
-    } catch (error) {
-      toast.error('حدث خطأ أثناء إرسال الرسالة');
-    }
+      triggerSavedFlash();
+    } catch { toast.error('خطأ في إضافة الأثاث'); }
+    finally { setIsSaving(false); }
   };
 
-  const handleAction = async (type: VisitRequest['currentAction']['type']) => {
-    if (!visitId || !activeChild) return;
-    if (isActionBusy) return;
-    
-    const actionData = {
-      type,
-      timestamp: Date.now(),
-      triggeredBy: activeChild.uid
-    };
-
-    const clearActionAfterDelay = () => {
-      setTimeout(() => {
-        setVisit(prev => {
-          if (prev?.currentAction?.timestamp === actionData.timestamp) {
-            return { ...prev, currentAction: null } as VisitRequest;
-          }
-          return prev;
+  const handleUpdateItem = async (itemId: string, updates: Partial<HouseItem>) => {
+    if (!hostProfile || !isHost) return;
+    const newFurniture = getCurrentRoomFurniture().map(i => i.id === itemId ? { ...i, ...updates } : i);
+    if (saveDebounce.current) clearTimeout(saveDebounce.current);
+    saveDebounce.current = setTimeout(async () => {
+      try {
+        setIsSaving(true);
+        await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
+          [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture
         });
-      }, 5000);
-    };
+        triggerSavedFlash();
+      } catch { console.error('Update item error'); }
+      finally { setIsSaving(false); }
+    }, 800);
+  };
+
+  const handleRemoveItem = async (itemId: string) => {
+    if (!hostProfile || !isHost) return;
+    const newFurniture = getCurrentRoomFurniture().filter(i => i.id !== itemId);
+    try {
+      setIsSaving(true);
+      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
+        [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture
+      });
+      playSound('pop');
+      triggerSavedFlash();
+    } catch { toast.error('خطأ في حذف الأثاث'); }
+    finally { setIsSaving(false); }
+  };
+
+  const handleUpdateWallpaper = async (wallpaperClass: string) => {
+    if (!hostProfile || !isHost) return;
+    try {
+      setIsSaving(true);
+      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
+        [`houseConfig.rooms.${activeRoom}.wallpaper`]: wallpaperClass
+      });
+      playSound('magic');
+      triggerSavedFlash();
+    } catch { toast.error('خطأ في تغيير ورق الحائط'); }
+    finally { setIsSaving(false); }
+  };
+
+  const handleUpdateFloor = async (floorClass: string) => {
+    if (!hostProfile || !isHost) return;
+    try {
+      setIsSaving(true);
+      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
+        [`houseConfig.rooms.${activeRoom}.floor`]: floorClass
+      });
+      playSound('magic');
+      triggerSavedFlash();
+    } catch { toast.error('خطأ في تغيير الأرضية'); }
+    finally { setIsSaving(false); }
+  };
+
+  /* ─── WARDROBE HANDLERS ──────────────────────────────────── */
+  const handleWardrobeChange = (field: keyof AvatarConfig, value: string) => {
+    if (!previewAvatar) return;
+    setPreviewAvatar(prev => prev ? { ...prev, [field]: value } : prev);
+  };
+
+  const handleSaveOutfit = async () => {
+    if (!activeChild || !previewAvatar) return;
+    try {
+      setIsSaving(true);
+      await updateDoc(doc(db, 'children_profiles', activeChild.uid), { avatar: previewAvatar });
+      // Update local storage
+      const stored = localStorage.getItem('active_child');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        parsed.avatar = previewAvatar;
+        localStorage.setItem('active_child', JSON.stringify(parsed));
+      }
+      toast.success('تم حفظ المظهر الجديد! ✨');
+      playSound('magic');
+      triggerSavedFlash();
+      setShowWardrobe(false);
+    } catch { toast.error('خطأ في حفظ المظهر'); }
+    finally { setIsSaving(false); }
+  };
+
+  /* ─── ACTIONS (tea, music, etc.) ─────────────────────────── */
+  const handleAction = async (type: VisitRequest['currentAction']['type']) => {
+    if (!visitId || !activeChild || isActionBusy) return;
+    const actionData = { type, timestamp: Date.now(), triggeredBy: activeChild.uid };
+    const clearAfter = () => setTimeout(() => setVisit(prev => prev?.currentAction?.timestamp === actionData.timestamp ? { ...prev, currentAction: null } as VisitRequest : prev), 5000);
 
     if (isLocalVisitMode) {
-      // Local mode for self/view visits
       setVisit(prev => prev ? { ...prev, currentAction: actionData } as VisitRequest : null);
-      playSound('magic');
-      clearActionAfterDelay();
-      return;
+      playSound('magic'); clearAfter(); return;
     }
-
     setIsActionBusy(true);
     try {
-      await updateDoc(doc(db, 'visit_requests', visitId), {
-        currentAction: actionData
-      });
-      
+      await updateDoc(doc(db, 'visit_requests', visitId), { currentAction: actionData });
       playSound('magic');
-      
       setTimeout(async () => {
-        // Only reset if it's still the same action
-        const currentDoc = await getDoc(doc(db, 'visit_requests', visitId));
-        if (currentDoc.exists() && currentDoc.data().currentAction?.timestamp === actionData.timestamp) {
-          await updateDoc(doc(db, 'visit_requests', visitId), {
-            'currentAction.type': 'none'
-          });
-        }
+        const d = await getDoc(doc(db, 'visit_requests', visitId));
+        if (d.exists() && d.data().currentAction?.timestamp === actionData.timestamp)
+          await updateDoc(doc(db, 'visit_requests', visitId), { 'currentAction.type': 'none' });
       }, 5000);
-    } catch (error) {
-      // Graceful fallback to local interaction if remote update fails
+    } catch {
       setVisit(prev => prev ? { ...prev, currentAction: actionData } as VisitRequest : null);
-      clearActionAfterDelay();
-      toast.error('تعذر مزامنة الحركة الآن، تم تنفيذها محليًا ✨');
-    } finally {
-      setTimeout(() => setIsActionBusy(false), 300);
-    }
+      clearAfter();
+    } finally { setTimeout(() => setIsActionBusy(false), 300); }
   };
 
+  /* ─── GAME HANDLERS ──────────────────────────────────────── */
   const handleStartGame = async () => {
     if (!visitId || !activeChild || !visit) return;
     const newGameState: VisitRequest['gameState'] = {
-      type: 'tictactoe',
-      board: Array(9).fill(null),
-      turn: 'X',
-      winner: null,
-      isDraw: false,
-      playerX: visit.fromId,
-      playerO: visit.toId
+      type: 'tictactoe', board: Array(9).fill(null), turn: 'X',
+      winner: null, isDraw: false, playerX: visit.fromId, playerO: visit.toId
     };
-
     try {
-      if (isLocalVisitMode) {
-        setVisit(prev => (prev ? { ...prev, gameState: newGameState } : prev));
-      } else {
-        await updateDoc(doc(db, 'visit_requests', visitId), { gameState: newGameState });
-      }
+      if (isLocalVisitMode) setVisit(prev => prev ? { ...prev, gameState: newGameState } : prev);
+      else await updateDoc(doc(db, 'visit_requests', visitId), { gameState: newGameState });
       playSound('pop');
-    } catch (error) {
-      toast.error('حدث خطأ أثناء بدء اللعبة');
-    }
+    } catch { toast.error('خطأ في بدء اللعبة'); }
   };
 
   const handleMakeMove = async (index: number) => {
     if (!visitId || !activeChild || !visit?.gameState || visit.gameState.type !== 'tictactoe') return;
     if (visit.gameState.board[index] || visit.gameState.winner) return;
-
-    const myMarker =
-      visit.gameState.playerX === activeChild.uid ? 'X' :
-      visit.gameState.playerO === activeChild.uid ? 'O' :
-      null;
-
+    const myMarker = visit.gameState.playerX === activeChild.uid ? 'X' : visit.gameState.playerO === activeChild.uid ? 'O' : null;
     if (!isLocalVisitMode && (!myMarker || visit.gameState.turn !== myMarker)) return;
-
-    const newBoard = [...visit.gameState.board];
-    newBoard[index] = visit.gameState.turn;
-
-    const winningLines = [
-      [0, 1, 2], [3, 4, 5], [6, 7, 8],
-      [0, 3, 6], [1, 4, 7], [2, 5, 8],
-      [0, 4, 8], [2, 4, 6]
-    ];
-
+    const newBoard = [...visit.gameState.board]; newBoard[index] = visit.gameState.turn;
+    const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
     let winner = null;
-    for (const line of winningLines) {
-      const [a, b, c] = line;
-      if (newBoard[a] && newBoard[a] === newBoard[b] && newBoard[a] === newBoard[c]) {
-        winner = newBoard[a];
-        break;
-      }
-    }
-
-    const isDraw = !winner && newBoard.every(cell => cell !== null);
-    const nextTurn = visit.gameState.turn === 'X' ? 'O' : 'X';
-
+    for (const [a,b,c] of lines) if (newBoard[a] && newBoard[a] === newBoard[b] && newBoard[a] === newBoard[c]) { winner = newBoard[a]; break; }
+    const isDraw = !winner && newBoard.every(c => c !== null);
+    const nextState: VisitRequest['gameState'] = { ...visit.gameState, board: newBoard, turn: visit.gameState.turn === 'X' ? 'O' : 'X', winner: isDraw ? 'draw' : winner, isDraw };
     try {
-      const nextState: VisitRequest['gameState'] = {
-        ...visit.gameState,
-        board: newBoard,
-        turn: nextTurn,
-        winner: isDraw ? 'draw' : winner,
-        isDraw
-      };
-      if (isLocalVisitMode) {
-        setVisit(prev => (prev ? { ...prev, gameState: nextState } : prev));
-      } else {
-        await updateDoc(doc(db, 'visit_requests', visitId), { gameState: nextState });
-      }
+      if (isLocalVisitMode) setVisit(prev => prev ? { ...prev, gameState: nextState } : prev);
+      else await updateDoc(doc(db, 'visit_requests', visitId), { gameState: nextState });
       playSound('pop');
-      if (winner) {
-        const didIWin = myMarker ? winner === myMarker : winner === 'X';
-        toast.success(`فاز ${didIWin ? 'أنتِ' : 'صديقتكِ'}! 🎉`);
-        playSound('magic');
-      } else if (isDraw) {
-        toast.info('تعادل! 🤝');
-      }
-    } catch (error) {
-      toast.error('حدث خطأ أثناء اللعب');
-    }
+      if (winner) { const didIWin = myMarker ? winner === myMarker : winner === 'X'; toast.success(didIWin ? 'فزتِ! 🎉' : 'فازت صديقتكِ! 👏'); playSound('magic'); }
+      else if (isDraw) toast.info('تعادل! 🤝');
+    } catch { toast.error('خطأ في اللعب'); }
   };
 
   const handleCloseGame = async () => {
     if (!visitId) return;
-    try {
-      if (isLocalVisitMode) {
-        setVisit(prev => (prev ? { ...prev, gameState: undefined } : prev));
-      } else {
-        await updateDoc(doc(db, 'visit_requests', visitId), { gameState: null });
-      }
-    } catch (error) {
-      toast.error('حدث خطأ أثناء إغلاق اللعبة');
-    }
+    if (isLocalVisitMode) setVisit(prev => prev ? { ...prev, gameState: undefined } : prev);
+    else await updateDoc(doc(db, 'visit_requests', visitId), { gameState: null }).catch(() => {});
   };
 
-  const handleAddItem = async (item: Partial<HouseItem>) => {
-    if (!hostProfile || !activeChild || activeChild.uid !== hostProfile.uid) return;
-    
-    const newItem: HouseItem = {
-      id: Math.random().toString(36).substr(2, 9),
-      type: item.type || 'furniture',
-      emoji: item.emoji || '✨',
-      x: 50,
-      y: 50,
-      scale: 1,
-      rotation: 0
-    };
-
-    const newConfig: HouseConfig = {
-      theme: hostProfile.houseConfig?.theme || 'castle',
-      furniture: [...(hostProfile.houseConfig?.furniture || []), newItem],
-      decorations: hostProfile.houseConfig?.decorations || [],
-      wallpaper: hostProfile.houseConfig?.wallpaper || '',
-      floor: hostProfile.houseConfig?.floor || ''
-    };
-
-    try {
-      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-        houseConfig: newConfig
-      });
-      playSound('pop');
-    } catch (error) {
-      toast.error('خطأ في إضافة الأثاث');
-    }
-  };
-
-  const handleUpdateItem = async (itemId: string, updates: Partial<HouseItem>) => {
-    if (!hostProfile || !activeChild || activeChild.uid !== hostProfile.uid) return;
-
-    const newFurniture = (hostProfile.houseConfig?.furniture || []).map(item => 
-      item.id === itemId ? { ...item, ...updates } : item
-    );
-
-    try {
-      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-        'houseConfig.furniture': newFurniture
-      });
-    } catch (error) {
-      console.error('Update item error:', error);
-    }
-  };
-
-  const handleRemoveItem = async (itemId: string) => {
-    if (!hostProfile || !activeChild || activeChild.uid !== hostProfile.uid) return;
-
-    const newFurniture = (hostProfile.houseConfig?.furniture || []).filter(item => item.id !== itemId);
-
-    try {
-      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-        'houseConfig.furniture': newFurniture
-      });
-      playSound('pop');
-    } catch (error) {
-      toast.error('خطأ في حذف الأثاث');
-    }
-  };
-
-  const handleUpdateTheme = async (theme: keyof typeof THEMES) => {
-    if (!hostProfile || !activeChild || activeChild.uid !== hostProfile.uid) return;
-    try {
-      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-        'houseConfig.theme': theme,
-        'houseConfig.wallpaper': '', // Reset custom wallpaper when theme changes
-        'houseConfig.floor': ''
-      });
-      playSound('magic');
-    } catch (error) {
-      toast.error('خطأ في تغيير السمة');
-    }
-  };
-
-  const handleUpdateWallpaper = async (wallpaperClass: string) => {
-    if (!hostProfile || !activeChild || activeChild.uid !== hostProfile.uid) return;
-    try {
-      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-        'houseConfig.wallpaper': wallpaperClass
-      });
-      playSound('magic');
-    } catch (error) {
-      toast.error('خطأ في تغيير ورق الحائط');
-    }
-  };
-
-  const handleUpdateFloor = async (floorClass: string) => {
-    if (!hostProfile || !activeChild || activeChild.uid !== hostProfile.uid) return;
-    try {
-      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-        'houseConfig.floor': floorClass
-      });
-      playSound('magic');
-    } catch (error) {
-      toast.error('خطأ في تغيير الأرضية');
-    }
-  };
-
+  /* ─── MAGIC DECORATE ─────────────────────────────────────── */
   const handleMagicDecorate = async () => {
-    if (!hostProfile || !activeChild || activeChild.uid !== hostProfile.uid) return;
-    
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      toast.error('مفتاح API غير متوفر');
-      return;
-    }
-
+    if (!hostProfile || !isHost) return;
+    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (window as any).__GEMINI_API_KEY__;
+    if (!apiKey) { toast.error('مفتاح API غير متوفر'); return; }
     setIsMagicDecorating(true);
     try {
       const ai = new GoogleGenAI({ apiKey });
-      const prompt = `
-        You are a magical interior designer for a children's app called "Magic Village".
-        The host is a hero named "${hostProfile.heroName || hostProfile.name}".
-        Suggest a fun, magical room decoration theme based on their name or just a generally awesome theme (like "Magic Forest", "Candy Land", "Starry Night", "Ocean Kingdom").
-        Return ONLY a JSON object with this structure:
-        {
-          "wallpaper": "bg-gradient-to-b from-purple-200 to-pink-100", // A valid tailwind background color or gradient class
-          "floor": "bg-amber-100", // A valid tailwind background color class
-          "furniture": [
-            { "type": "bed", "emoji": "🛏️", "x": 20, "y": 70, "scale": 2, "rotation": 0 },
-            { "type": "chair", "emoji": "🪑", "x": 50, "y": 75, "scale": 1.2, "rotation": 0 },
-            { "type": "table", "emoji": "🛋️", "x": 70, "y": 80, "scale": 1.5, "rotation": 0 },
-            { "type": "plant", "emoji": "🪴", "x": 10, "y": 60, "scale": 1, "rotation": 0 },
-            { "type": "toy", "emoji": "🧸", "x": 40, "y": 85, "scale": 1, "rotation": 0 }
-          ]
-        }
-      `;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-        }
-      });
-
+      const prompt = `You are a magical interior designer for a children's app. The hero is "${hostProfile.heroName || hostProfile.name}". Suggest a fun magical room. Return ONLY JSON: { "wallpaper": "bg-gradient-to-b from-purple-200 to-pink-100", "floor": "bg-amber-100", "furniture": [{ "type": "bed", "emoji": "🛏️", "x": 20, "y": 70, "scale": 2, "rotation": 0 }, { "type": "plant", "emoji": "🪴", "x": 10, "y": 60, "scale": 1, "rotation": 0 }] }`;
+      const response = await ai.models.generateContent({ model: 'gemini-2.0-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
       const result = JSON.parse(response.text || '{}');
-      
       if (result.wallpaper && result.furniture) {
-        const newFurniture = result.furniture.map((f: any) => ({
-          ...f,
-          id: Math.random().toString(36).substr(2, 9)
-        }));
-
+        const newFurniture = result.furniture.map((f: any) => ({ ...f, id: Math.random().toString(36).substr(2, 9) }));
         await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-          'houseConfig.wallpaper': result.wallpaper,
-          'houseConfig.floor': result.floor || 'bg-amber-100',
-          'houseConfig.furniture': newFurniture
+          [`houseConfig.rooms.${activeRoom}.wallpaper`]: result.wallpaper,
+          [`houseConfig.rooms.${activeRoom}.floor`]: result.floor || 'bg-amber-100',
+          [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture
         });
-        toast.success('تم التزيين السحري! ✨');
-        playSound('magic');
+        toast.success('تم التزيين السحري! ✨'); playSound('magic');
       }
-    } catch (error) {
-      console.error("Magic decorate error:", error);
-      toast.error('عذراً، السحر لم يكتمل هذه المرة');
-    } finally {
-      setIsMagicDecorating(false);
-    }
+    } catch { toast.error('عذراً، السحر لم يكتمل'); }
+    finally { setIsMagicDecorating(false); }
   };
 
+  /* ─── CHAT ───────────────────────────────────────────────── */
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !activeChild || !visitId) return;
+    try {
+      await addDoc(collection(db, 'chat_messages'), {
+        visitId, senderId: activeChild.uid,
+        senderName: activeChild.heroName || activeChild.name,
+        text: newMessage, timestamp: Date.now()
+      });
+      setNewMessage(''); playSound('pop');
+    } catch { toast.error('خطأ في إرسال الرسالة'); }
+  };
+
+  /* ─── END VISIT ──────────────────────────────────────────── */
   const handleEndVisit = async () => {
     if (visitId !== 'self' && !isLocalVisitMode) {
-      try {
-        await updateDoc(doc(db, 'visit_requests', visitId), {
-          status: 'ended'
-        });
-      } catch (error) {
-        console.error("Error ending visit:", error);
-      }
+      await updateDoc(doc(db, 'visit_requests', visitId!), { status: 'ended' }).catch(() => {});
     }
     navigate('/child');
   };
 
+  /* ─── LOADING ────────────────────────────────────────────── */
   if (loading || !visit || !hostProfile) {
     return (
-      <div className="min-h-screen bg-pink-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-pink-500"></div>
+      <div className="min-h-screen bg-gradient-to-br from-fuchsia-950 to-indigo-950 flex items-center justify-center" dir="rtl">
+        <div className="flex flex-col items-center gap-4">
+          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }} className="text-6xl">🏠</motion.div>
+          <p className="text-white font-black text-xl">جارٍ تحميل البيت...</p>
+        </div>
       </div>
     );
   }
 
-  const houseTheme = THEMES[hostProfile.houseConfig?.theme as keyof typeof THEMES] || THEMES.castle;
-  const hostAvatar = visitId === 'self' ? activeChild?.avatar : visit.toAvatar;
+  /* ─── COMPUTED VALUES ────────────────────────────────────── */
+  const currentFurniture = getCurrentRoomFurniture();
+  const currentWall = getCurrentWallpaper();
+  const currentFloor = getCurrentFloor();
+  const hostAvatar = visitId === 'self' ? (previewAvatar || activeChild?.avatar) : visit.toAvatar;
   const visitorAvatar = visitId === 'self' ? null : visit.fromAvatar;
   const myMarker = visit.gameState
     ? (visit.gameState.playerX === activeChild?.uid ? 'X' : visit.gameState.playerO === activeChild?.uid ? 'O' : null)
     : null;
-  const sessionStart = visit.acceptedAt || visit.timestamp;
-  const elapsedMinutes = Math.max(1, Math.floor((Date.now() - sessionStart) / 60000));
-  const moodLabel =
-    visit.roomMood === 'playful' ? 'جوّ مرح 🎉' :
-    visit.roomMood === 'calm' ? 'جوّ هادئ 🌙' :
-    'جوّ بيتي دافئ 🏡';
 
+  /* ─── RENDER ─────────────────────────────────────────────── */
   return (
     <div className="fixed inset-0 bg-slate-900 font-sans overflow-hidden" dir="rtl">
-      {/* Full Screen Room Background */}
-      <div className={`absolute inset-0 ${hostProfile.houseConfig?.wallpaper || houseTheme.wall} transition-colors duration-1000`} />
-      <div className={`absolute bottom-0 w-full h-1/3 ${hostProfile.houseConfig?.floor || houseTheme.floor} border-t-8 border-black/10 transition-colors duration-1000`} />
 
-      {/* Magic Decorating Overlay */}
+      {/* ── ROOM BACKGROUND ── */}
+      <div className={`absolute inset-0 ${currentWall} transition-all duration-700`} />
+      <div className={`absolute bottom-0 w-full h-1/3 ${currentFloor} border-t-8 border-black/10 transition-all duration-700`} />
+
+      {/* ── MAGIC DECORATING OVERLAY ── */}
       <AnimatePresence>
         {isMagicDecorating && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }} 
-            className="fixed inset-0 z-[100] bg-purple-500/30 backdrop-blur-md flex flex-col items-center justify-center pointer-events-none"
-          >
-            <motion.div
-              animate={{ 
-                scale: [1, 1.5, 1],
-                rotate: [0, 360],
-                filter: ['hue-rotate(0deg)', 'hue-rotate(360deg)']
-              }}
-              transition={{ duration: 2, repeat: Infinity }}
-              className="text-9xl mb-8"
-            >
-              🪄
-            </motion.div>
-            <motion.h2 
-              animate={{ opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-              className="text-4xl font-black text-white drop-shadow-lg"
-            >
-              جاري التزيين السحري... ✨
-            </motion.h2>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-purple-500/30 backdrop-blur-md flex flex-col items-center justify-center pointer-events-none">
+            <motion.div animate={{ scale: [1,1.5,1], rotate: [0,360], filter: ['hue-rotate(0deg)','hue-rotate(360deg)'] }}
+              transition={{ duration: 2, repeat: Infinity }} className="text-9xl mb-8">🪄</motion.div>
+            <motion.h2 animate={{ opacity: [0.5,1,0.5] }} transition={{ duration: 1.5, repeat: Infinity }}
+              className="text-4xl font-black text-white drop-shadow-lg">جاري التزيين السحري... ✨</motion.h2>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Floating Header */}
-      <header className="absolute top-4 left-4 right-4 z-50 flex justify-between items-start pointer-events-none">
-        <div className="flex gap-3 pointer-events-auto">
-          <button onClick={handleEndVisit} className="w-14 h-14 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-red-500 hover:bg-red-50 shadow-xl border-4 border-white transition-transform hover:scale-105">
-            <LogOut className="w-6 h-6" />
-          </button>
-          {activeChild?.uid === hostProfile?.uid && (
-            <button onClick={() => setIsEditing(!isEditing)} className={`w-14 h-14 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-4 border-white transition-transform hover:scale-105 ${isEditing ? 'bg-pink-500 text-white' : 'bg-white/90 text-pink-500'}`}>
-              <Palette className="w-6 h-6" />
-            </button>
-          )}
-        </div>
-        
-        <div className="bg-white/90 backdrop-blur-md px-8 py-3 rounded-full shadow-xl border-4 border-white flex items-center gap-6 pointer-events-auto">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-bold text-slate-400">منزل:</span>
-            <span className="text-xl font-black text-pink-500">{visit.toName}</span>
-          </div>
-          {visitId !== 'self' && (
-            <>
-              <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-bold text-slate-400">الضيفة:</span>
-                <span className="text-xl font-black text-sky-500">{visit.fromHeroName}</span>
-              </div>
-            </>
-          )}
-        </div>
-      </header>
+      {/* ── SAVED INDICATOR ── */}
+      <AnimatePresence>
+        {savedFlash && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
+            className="fixed top-24 left-1/2 -translate-x-1/2 z-[90] bg-emerald-500 text-white px-6 py-3 rounded-full font-black shadow-2xl flex items-center gap-2">
+            <Check className="w-5 h-5" /> تم الحفظ تلقائياً ✨
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {visitId !== 'self' && (
-        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
-          <div className="bg-white/85 backdrop-blur-md border-2 border-pink-100 rounded-full px-6 py-2 shadow-lg text-sm font-bold text-princess-purple flex items-center gap-3">
-            <span>🫶 معًا في نفس البيت منذ {elapsedMinutes} د</span>
-            <span className="text-pink-400">•</span>
-            <span>{moodLabel}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Room Content (Furniture & Characters) */}
+      {/* ── FURNITURE IN ROOM ── */}
       <div id="room-container" className="absolute inset-0 z-10 overflow-hidden">
-        {/* Custom Furniture */}
-        {(hostProfile.houseConfig?.furniture || []).map((item) => (
-          <motion.div
-            key={item.id}
-            drag={isEditing}
-            dragMomentum={false}
+        {currentFurniture.map((item) => (
+          <motion.div key={item.id} drag={isEditing} dragMomentum={false}
             onDragEnd={(e, info) => {
               const parent = document.getElementById('room-container');
-              if (parent && typeof parent.getBoundingClientRect === 'function') {
+              if (parent) {
                 const rect = parent.getBoundingClientRect();
-                const dx = (info.offset.x / rect.width) * 100;
-                const dy = (info.offset.y / rect.height) * 100;
-                handleUpdateItem(item.id, { 
-                  x: Math.max(0, Math.min(100, item.x + dx)), 
-                  y: Math.max(0, Math.min(100, item.y + dy)) 
+                handleUpdateItem(item.id, {
+                  x: Math.max(0, Math.min(95, item.x + (info.offset.x / rect.width) * 100)),
+                  y: Math.max(0, Math.min(80, item.y + (info.offset.y / rect.height) * 100))
                 });
               }
             }}
-            animate={{ x: 0, y: 0 }}
-            transition={{ duration: 0 }}
+            animate={{ x: 0, y: 0 }} transition={{ duration: 0 }}
             style={{ left: `${item.x}%`, top: `${item.y}%` }}
-            onClick={() => {
-              if (!isEditing && item.type === 'mirror') {
-                handleAction('mirror');
-              }
-            }}
-            className={`absolute text-7xl md:text-8xl ${isEditing ? 'cursor-grab active:cursor-grabbing z-50' : item.type === 'mirror' ? 'cursor-pointer z-30' : 'z-20'} group`}
+            onClick={() => { if (!isEditing && item.type === 'mirror') handleAction('mirror'); }}
+            className={`absolute text-6xl md:text-7xl ${isEditing ? 'cursor-grab active:cursor-grabbing z-50' : 'z-20'} group select-none`}
           >
             <div className="relative flex items-center justify-center">
               <div style={{ transform: `scale(${item.scale || 1}) rotate(${item.rotation || 0}deg)`, transition: 'transform 0.2s' }}>
                 {item.emoji}
               </div>
               {isEditing && (
-                <div className="absolute -top-20 left-1/2 -translate-x-1/2 flex gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-full shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity z-50 border-2 border-slate-100">
-                  <button onClick={() => handleUpdateItem(item.id, { scale: Math.min(3, (item.scale || 1) + 0.2) })} className="w-10 h-10 flex items-center justify-center bg-emerald-100 text-emerald-600 rounded-full hover:bg-emerald-200"><Plus className="w-5 h-5" /></button>
-                  <button onClick={() => handleUpdateItem(item.id, { scale: Math.max(0.5, (item.scale || 1) - 0.2) })} className="w-10 h-10 flex items-center justify-center bg-amber-100 text-amber-600 rounded-full hover:bg-amber-200"><Minus className="w-5 h-5" /></button>
-                  <button onClick={() => handleUpdateItem(item.id, { rotation: ((item.rotation || 0) + 45) % 360 })} className="w-10 h-10 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200"><RotateCw className="w-5 h-5" /></button>
-                  <button onClick={() => handleRemoveItem(item.id)} className="w-10 h-10 flex items-center justify-center bg-red-100 text-red-600 rounded-full hover:bg-red-200"><Trash2 className="w-5 h-5" /></button>
+                <div className="absolute -top-20 left-1/2 -translate-x-1/2 flex gap-1.5 bg-white/95 backdrop-blur-sm p-2 rounded-2xl shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity z-50 border border-slate-100">
+                  <button onClick={() => handleUpdateItem(item.id, { scale: Math.min(3, (item.scale || 1) + 0.2) })} className="w-9 h-9 flex items-center justify-center bg-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-200"><Plus className="w-4 h-4" /></button>
+                  <button onClick={() => handleUpdateItem(item.id, { scale: Math.max(0.4, (item.scale || 1) - 0.2) })} className="w-9 h-9 flex items-center justify-center bg-amber-100 text-amber-600 rounded-xl hover:bg-amber-200"><Minus className="w-4 h-4" /></button>
+                  <button onClick={() => handleUpdateItem(item.id, { rotation: ((item.rotation || 0) + 45) % 360 })} className="w-9 h-9 flex items-center justify-center bg-blue-100 text-blue-600 rounded-xl hover:bg-blue-200"><RotateCw className="w-4 h-4" /></button>
+                  <button onClick={() => handleRemoveItem(item.id)} className="w-9 h-9 flex items-center justify-center bg-red-100 text-red-600 rounded-xl hover:bg-red-200"><Trash2 className="w-4 h-4" /></button>
                 </div>
               )}
             </div>
           </motion.div>
         ))}
 
-        {/* Default Furniture (if empty) */}
-        {(!hostProfile.houseConfig?.furniture || hostProfile.houseConfig.furniture.length === 0) && (
-          <>
-            <div className="absolute bottom-[20%] left-[10%] text-9xl opacity-80 drop-shadow-2xl">🛋️</div>
-            <div className="absolute bottom-[20%] right-[10%] text-9xl opacity-80 drop-shadow-2xl">🛋️</div>
-            <div className="absolute top-[20%] left-[10%] text-8xl opacity-60 drop-shadow-xl">🛏️</div>
-          </>
+        {/* Default hint if empty */}
+        {currentFurniture.length === 0 && !isEditing && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <motion.div animate={{ opacity: [0.4, 0.7, 0.4] }} transition={{ duration: 2, repeat: Infinity }}
+              className="text-center bg-white/30 backdrop-blur-sm rounded-3xl p-8">
+              <div className="text-6xl mb-3">{ROOMS[activeRoom].icon}</div>
+              <p className="font-black text-slate-700">اضغطي على ✏️ لإضافة أثاث!</p>
+            </motion.div>
+          </div>
         )}
 
         {/* Characters */}
-        <div className="absolute bottom-[25%] w-full flex justify-center gap-10 md:gap-32 z-30 pointer-events-none">
-          {/* Host Doll */}
-          <div className="flex flex-col items-center gap-4 pointer-events-auto">
-            <Doll 
-              avatar={hostAvatar || { color: 'bg-pink-200', hairStyle: '👧', dressStyle: '👗', accessory: '🎀' }} 
-              isDancing={visit.currentAction?.type === 'dance'}
-            />
-          </div>
-
-          {/* Visitor Doll */}
+        <div className="absolute bottom-[30%] w-full flex justify-center gap-16 md:gap-40 z-30 pointer-events-none">
+          {hostAvatar && (
+            <div className="flex flex-col items-center">
+              <Doll avatar={hostAvatar} isDancing={visit.currentAction?.type === 'dance'} size="lg" />
+              <span className="mt-2 bg-white/80 backdrop-blur-sm text-pink-600 font-black text-xs px-3 py-1 rounded-full">
+                {hostProfile?.heroName || hostProfile?.name}
+              </span>
+            </div>
+          )}
           {visitorAvatar && (
-            <div className="flex flex-col items-center gap-4 pointer-events-auto">
-              <Doll 
-                avatar={visitorAvatar} 
-                isDancing={visit.currentAction?.type === 'dance'}
-              />
+            <div className="flex flex-col items-center">
+              <Doll avatar={visitorAvatar} isDancing={visit.currentAction?.type === 'dance'} size="lg" />
+              <span className="mt-2 bg-white/80 backdrop-blur-sm text-sky-600 font-black text-xs px-3 py-1 rounded-full">
+                {visit.fromHeroName}
+              </span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Action Animations Overlay */}
+      {/* ── ACTION ANIMATIONS ── */}
       <div className="absolute inset-0 pointer-events-none z-40">
         <AnimatePresence>
-          {visit.currentAction?.type === 'tea' && (
-            <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 2, y: -50 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">☕✨</motion.div>
-          )}
-          {visit.currentAction?.type === 'sweets' && (
-            <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 2, y: -50 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">🍰🍬</motion.div>
-          )}
-          {visit.currentAction?.type === 'juice' && (
-            <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 2, y: -50 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">🍹🍊</motion.div>
-          )}
-          {visit.currentAction?.type === 'cookies' && (
-            <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 2, y: -50 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">🍪🍪</motion.div>
-          )}
-          {visit.currentAction?.type === 'fruit' && (
-            <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 2, y: -50 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">🍓🍎</motion.div>
-          )}
-          {visit.currentAction?.type === 'mirror' && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.8 }} 
-              animate={{ opacity: 1, scale: 1 }} 
-              exit={{ opacity: 0, scale: 0.8 }} 
-              className="absolute inset-0 flex items-center justify-center bg-white/20 backdrop-blur-sm z-50"
-            >
-              <div className="relative p-8 bg-white/90 rounded-[3rem] shadow-2xl border-8 border-pink-200 flex flex-col items-center gap-6">
-                <div className="text-4xl font-black text-pink-500 mb-2">المرآة السحرية ✨</div>
-                <div className="w-64 h-64 rounded-full overflow-hidden border-8 border-pink-100 shadow-inner bg-gradient-to-b from-blue-50 to-pink-50 flex items-center justify-center">
-                  <Doll avatar={visit.currentAction?.triggeredBy === visit.fromId ? visit.fromAvatar : visit.toAvatar!} />
-                </div>
-                <p className="text-xl font-bold text-slate-600">تبدين رائعة اليوم! 💖</p>
-                <button 
-                  onClick={() => handleAction('none')}
-                  className="bg-pink-500 text-white px-8 py-3 rounded-full font-bold shadow-lg hover:bg-pink-600 pointer-events-auto"
-                >
-                  شكراً! ✨
-                </button>
-              </div>
-            </motion.div>
-          )}
-          {visit.currentAction?.type === 'heart' && (
-            <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 3, y: -100 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">💖</motion.div>
-          )}
-          {visit.currentAction?.type === 'star' && (
-            <motion.div initial={{ opacity: 0, scale: 0, rotate: -180 }} animate={{ opacity: 1, scale: 3, rotate: 0 }} exit={{ opacity: 0, scale: 0, rotate: 180 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">⭐</motion.div>
-          )}
-          {visit.currentAction?.type === 'laugh' && (
-            <motion.div initial={{ opacity: 0, scale: 0, y: 50 }} animate={{ opacity: 1, scale: 2, y: -50, rotate: [0, -10, 10, -10, 10, 0] }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">😂</motion.div>
-          )}
-          {visit.currentAction?.type === 'wow' && (
-            <motion.div initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 3 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">😲✨</motion.div>
-          )}
+          {visit.currentAction?.type === 'tea' && <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 2, y: -50 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">☕✨</motion.div>}
+          {visit.currentAction?.type === 'sweets' && <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 2, y: -50 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">🍰🍬</motion.div>}
+          {visit.currentAction?.type === 'juice' && <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 2, y: -50 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">🍹🍊</motion.div>}
+          {visit.currentAction?.type === 'cookies' && <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 2, y: -50 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">🍪🍪</motion.div>}
+          {visit.currentAction?.type === 'fruit' && <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 2, y: -50 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">🍓🍎</motion.div>}
+          {visit.currentAction?.type === 'heart' && <motion.div initial={{ opacity: 0, scale: 0, y: 100 }} animate={{ opacity: 1, scale: 3, y: -100 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">💖</motion.div>}
+          {visit.currentAction?.type === 'star' && <motion.div initial={{ opacity: 0, scale: 0, rotate: -180 }} animate={{ opacity: 1, scale: 3, rotate: 0 }} exit={{ opacity: 0, scale: 0, rotate: 180 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">⭐</motion.div>}
+          {visit.currentAction?.type === 'laugh' && <motion.div initial={{ opacity: 0, scale: 0, y: 50 }} animate={{ opacity: 1, scale: 2, y: -50, rotate: [0,-10,10,-10,10,0] }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">😂</motion.div>}
+          {visit.currentAction?.type === 'wow' && <motion.div initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 3 }} exit={{ opacity: 0, scale: 0 }} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-9xl drop-shadow-2xl">😲✨</motion.div>}
           {visit.currentAction?.type === 'music' && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex items-center justify-center">
               {[...Array(15)].map((_, i) => (
-                <motion.div key={i} animate={{ y: [-20, -300], x: [0, (i % 2 === 0 ? 150 : -150)], opacity: [0, 1, 0], rotate: [0, 90] }} transition={{ duration: 3, repeat: Infinity, delay: i * 0.2 }} className="absolute text-6xl drop-shadow-xl">🎵</motion.div>
+                <motion.div key={i} animate={{ y: [-20,-300], x: [0, i%2===0?150:-150], opacity: [0,1,0], rotate: [0,90] }} transition={{ duration: 3, repeat: Infinity, delay: i*0.2 }} className="absolute text-6xl drop-shadow-xl">🎵</motion.div>
               ))}
+            </motion.div>
+          )}
+          {visit.currentAction?.type === 'mirror' && (
+            <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
+              className="absolute inset-0 flex items-center justify-center bg-white/20 backdrop-blur-sm z-50 pointer-events-auto">
+              <div className="p-8 bg-white/95 rounded-[3rem] shadow-2xl border-8 border-pink-200 flex flex-col items-center gap-6">
+                <div className="text-4xl font-black text-pink-500">المرآة السحرية ✨</div>
+                <div className="w-64 h-64 rounded-full overflow-hidden border-8 border-pink-100 bg-gradient-to-b from-blue-50 to-pink-50 flex items-center justify-center">
+                  <Doll avatar={visit.currentAction?.triggeredBy === visit.fromId ? visit.fromAvatar : (visit.toAvatar || visit.fromAvatar)} size="lg" />
+                </div>
+                <p className="text-xl font-bold text-slate-600">تبدين رائعة اليوم! 💖</p>
+                <button onClick={() => handleAction('none')} className="bg-pink-500 text-white px-8 py-3 rounded-full font-bold shadow-lg hover:bg-pink-600">شكراً! ✨</button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Floating UI Overlay */}
-      <div className="absolute inset-0 pointer-events-none z-50 flex flex-col justify-between p-6">
-        
-        {/* Top Bar */}
-        <div className="flex justify-between items-start">
-          {/* Back Button & Host Info (Left) */}
-          <div className="flex flex-col gap-4 pointer-events-auto">
-            <button 
-              onClick={() => navigate('/child')}
-              className="bg-white/90 backdrop-blur-sm text-sky-600 px-6 py-3 rounded-full font-bold shadow-lg hover:bg-sky-50 transition-colors flex items-center gap-2 border-2 border-sky-100"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              العودة للقرية
+      {/* ── TOP HEADER ── */}
+      <div className="absolute top-4 left-4 right-4 z-50 flex justify-between items-start pointer-events-none">
+        {/* Left: back + host info */}
+        <div className="flex flex-col gap-3 pointer-events-auto">
+          <div className="flex gap-2">
+            <button onClick={handleEndVisit} className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-red-500 hover:bg-red-50 shadow-xl border-3 border-white">
+              <LogOut className="w-5 h-5" />
             </button>
-            
-            <div className="bg-white/90 backdrop-blur-sm px-6 py-3 rounded-2xl shadow-lg border-2 border-pink-100 flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-pink-200 bg-pink-50 flex items-center justify-center">
-                <Doll avatar={hostProfile?.avatar!} />
-              </div>
-              <div>
-                <div className="text-sm font-bold text-slate-500">منزل البطلة</div>
-                <div className="font-black text-pink-600">{hostProfile?.heroName || hostProfile?.name}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Action Menus (Right) */}
-          <div className="flex flex-col gap-4 items-end pointer-events-auto w-80">
-            {/* Magic Mirror Toggle */}
-            {visitId !== 'self' && (
-              <button 
-                onClick={() => handleAction('mirror')} 
-                className={`w-16 h-16 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform border-4 border-white bg-white text-purple-500`}
-              >
-                <Camera className="w-8 h-8" />
+            {isHost && (
+              <button onClick={() => { setIsEditing(!isEditing); setShowWardrobe(false); }}
+                className={`w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all ${isEditing ? 'bg-pink-500 text-white' : 'bg-white/90 text-pink-500'}`}>
+                <Palette className="w-5 h-5" />
+              </button>
+            )}
+            {isHost && (
+              <button onClick={() => { setShowWardrobe(!showWardrobe); setIsEditing(false); }}
+                className={`w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all ${showWardrobe ? 'bg-fuchsia-500 text-white' : 'bg-white/90 text-fuchsia-500'}`}>
+                <Shirt className="w-5 h-5" />
+              </button>
+            )}
+            {isHost && (
+              <button onClick={handleMagicDecorate}
+                className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-amber-500 hover:bg-amber-50 shadow-xl border-3 border-white">
+                <Wand2 className="w-5 h-5" />
               </button>
             )}
           </div>
+
+          <div className="bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl shadow-lg border-2 border-pink-100 flex items-center gap-3">
+            <Doll avatar={hostProfile.avatar} size="sm" />
+            <div>
+              <div className="text-[10px] font-bold text-slate-400">منزل البطلة</div>
+              <div className="font-black text-pink-600 text-sm">{hostProfile.heroName || hostProfile.name}</div>
+            </div>
+          </div>
         </div>
 
-        {/* Bottom Bar */}
-        <div className="flex justify-between items-end">
-          
-          {/* Chat Widget (Left) */}
-          {visitId !== 'self' && (
-            <div className="w-80 pointer-events-auto flex flex-col justify-end">
-              <AnimatePresence>
-                {showChat && (
-                  <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.9 }} className="bg-white/90 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-white overflow-hidden flex flex-col h-96 mb-4">
-                    <div className="bg-sky-100 p-4 flex justify-between items-center border-b-2 border-white">
-                      <h3 className="font-black text-sky-600 flex items-center gap-2"><MessageCircle className="w-5 h-5" /> الدردشة</h3>
-                      <button onClick={() => setShowChat(false)} className="text-sky-400 hover:text-sky-600"><X className="w-5 h-5" /></button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                      {messages.map((msg) => (
-                        <div key={msg.id} className={`flex flex-col ${msg.senderId === activeChild?.uid ? 'items-start' : 'items-end'}`}>
-                          <span className="text-[10px] font-bold text-slate-400 mb-1 px-2">{msg.senderName}</span>
-                          <div className={`px-4 py-2 rounded-2xl max-w-[85%] font-bold shadow-sm ${msg.senderId === activeChild?.uid ? 'bg-sky-500 text-white rounded-tr-sm' : 'bg-slate-100 text-slate-700 rounded-tl-sm'}`}>
-                            {msg.text}
-                          </div>
-                        </div>
-                      ))}
-                      <div ref={scrollRef} />
-                    </div>
-                    <form onSubmit={handleSendMessage} className="p-3 bg-slate-50 border-t-2 border-white flex gap-2">
-                      <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="اكتبي رسالة..." className="flex-1 bg-white border-2 border-slate-200 rounded-xl px-4 py-2 outline-none focus:border-sky-400 font-bold" />
-                      <button type="submit" disabled={!newMessage.trim()} className="bg-sky-500 text-white p-3 rounded-xl hover:bg-sky-600 disabled:opacity-50 transition-colors"><Send className="w-5 h-5" /></button>
-                    </form>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              {!showChat && (
-                <button onClick={() => setShowChat(true)} className="w-16 h-16 bg-sky-500 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform border-4 border-white">
-                  <MessageCircle className="w-8 h-8" />
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Game Widget (Right) */}
-          <div className="w-80 pointer-events-auto flex flex-col justify-end items-end">
-            {/* Tic-Tac-Toe Game Modal */}
-            <AnimatePresence>
-              {visit?.gameState?.type === 'tictactoe' && (
-                <motion.div initial={{ opacity: 0, scale: 0.8, y: 50 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8, y: 50 }} className="bg-white/95 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border-4 border-orange-100 p-6 w-full mb-4">
-                  <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-xl font-black text-orange-500 flex items-center gap-2"><Gamepad2 className="w-6 h-6" /> إكس أو</h3>
-                    <button onClick={handleCloseGame} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-500"><X className="w-5 h-5" /></button>
-                  </div>
-                  
-                  <div className="grid grid-cols-3 gap-3 mb-6">
-                    {visit.gameState.board?.map((cell, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleMakeMove(idx)}
-                        disabled={
-                          cell !== null ||
-                          !!visit.gameState?.winner ||
-                          (!isLocalVisitMode && (!myMarker || visit.gameState?.turn !== myMarker))
-                        }
-                        className={`aspect-square rounded-2xl text-4xl font-black flex items-center justify-center shadow-inner transition-colors ${
-                          cell === 'X' ? 'bg-orange-100 text-orange-500' : 
-                          cell === 'O' ? 'bg-sky-100 text-sky-500' : 
-                          'bg-slate-50 hover:bg-slate-100'
-                        }`}
-                      >
-                        {cell}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="text-center font-bold text-slate-600 bg-slate-50 py-3 rounded-xl">
-                    {visit.gameState.winner ? (
-                      visit.gameState.winner === 'draw' ? 'تعادل! 🤝' :
-                      visit.gameState.winner === myMarker ? 'لقد فزتِ! 🎉' : 'فازت صديقتك! 👏'
-                    ) : (
-                      isLocalVisitMode
-                        ? `الدور الآن: ${visit.gameState.turn === 'X' ? 'X' : 'O'}`
-                        : visit.gameState.turn === myMarker
-                          ? 'دوركِ الآن! ✨'
-                          : 'انتظري دور صديقتكِ ⏳'
-                    )}
-                  </div>
-                  {(visit.gameState.winner || visit.gameState.winner === 'draw') && (
-                    <button onClick={handleStartGame} className="mt-4 w-full bg-orange-500 text-white font-black py-3 rounded-xl shadow-md hover:bg-orange-600">العب مرة أخرى</button>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
+        {/* Center: room name badge */}
+        <div className="pointer-events-none">
+          <div className="bg-white/90 backdrop-blur-md px-6 py-2 rounded-full shadow-xl border-2 border-white flex items-center gap-3">
+            <span className="text-2xl">{ROOMS[activeRoom].icon}</span>
+            <span className="font-black text-slate-700">{ROOMS[activeRoom].label}</span>
+            {visitId !== 'self' && <span className="text-slate-400 text-sm">|</span>}
+            {visitId !== 'self' && <span className="font-bold text-sky-500 text-sm">{visit.fromHeroName}</span>}
           </div>
+        </div>
+
+        {/* Right: action buttons */}
+        <div className="flex flex-col gap-3 items-end pointer-events-auto">
+          {visitId !== 'self' && (
+            <button onClick={() => handleAction('mirror')} className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-purple-500 shadow-xl border-3 border-white hover:scale-105 transition-transform">
+              <Camera className="w-5 h-5" />
+            </button>
+          )}
+          {!isEditing && !showWardrobe && visitId !== 'self' && (
+            <button onClick={handleStartGame} className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-orange-500 shadow-xl border-3 border-white hover:scale-105 transition-transform">
+              <Gamepad2 className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Bottom Action Bar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-auto w-full max-w-4xl px-4">
-        <div className="bg-white/90 backdrop-blur-xl p-4 rounded-[2.5rem] shadow-2xl border-4 border-white flex gap-3 items-center justify-center overflow-x-auto hide-scrollbar">
-          {isEditing ? (
-            <div className="flex gap-4 items-center px-4">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-black text-slate-400">السمات:</span>
-                <div className="flex gap-2">
-                  {Object.keys(THEMES).map((t) => (
-                    <button 
-                      key={t} 
-                      onClick={() => handleUpdateTheme(t as keyof typeof THEMES)}
-                      className={`w-10 h-10 rounded-full border-2 transition-all ${hostProfile.houseConfig?.theme === t ? 'border-pink-500 scale-110 shadow-md' : 'border-white'} ${THEMES[t as keyof typeof THEMES].wall}`}
-                      title={t}
-                    />
+      {/* ── ROOM SELECTOR (bottom left) ── */}
+      <div className="absolute bottom-[140px] right-4 z-50 flex flex-col gap-2">
+        {(Object.entries(ROOMS) as [RoomId, typeof ROOMS[RoomId]][]).map(([id, room]) => (
+          <motion.button key={id} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+            onClick={() => setActiveRoom(id)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-black text-sm shadow-xl border-2 transition-all ${
+              activeRoom === id
+                ? 'bg-fuchsia-500 text-white border-fuchsia-300'
+                : 'bg-white/85 backdrop-blur-md text-slate-700 border-white hover:bg-white'
+            }`}>
+            <span className="text-xl">{room.icon}</span>
+            <span className="hidden sm:block">{room.label}</span>
+          </motion.button>
+        ))}
+      </div>
+
+      {/* ── EDITING PANEL ── */}
+      <AnimatePresence>
+        {isEditing && (
+          <motion.div initial={{ opacity: 0, y: 60 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 60 }}
+            className="absolute bottom-4 left-4 right-[130px] sm:right-[160px] z-50 bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-white p-4">
+
+            {/* Category tabs */}
+            <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
+              {FURNITURE_CATEGORIES.map((cat, idx) => (
+                <button key={cat.id} onClick={() => setFurnitureCategory(idx)}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-all ${furnitureCategory === idx ? 'bg-fuchsia-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                  <span>{cat.icon}</span> {cat.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Furniture items */}
+            <div className="grid grid-cols-8 gap-2 mb-4">
+              {FURNITURE_CATEGORIES[furnitureCategory].items.map(item => (
+                <motion.button key={item.type} whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }}
+                  onClick={() => handleAddItem(item)}
+                  className="w-10 h-10 bg-slate-50 hover:bg-fuchsia-50 rounded-xl flex items-center justify-center text-2xl shadow-sm border border-slate-200 hover:border-fuchsia-300 transition-all">
+                  {item.emoji}
+                </motion.button>
+              ))}
+            </div>
+
+            {/* Wallpaper + Floor */}
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <div className="text-[10px] font-black text-slate-400 mb-1.5">ورق الحائط</div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {WALLPAPER_OPTIONS.map(wp => (
+                    <button key={wp.id} onClick={() => handleUpdateWallpaper(wp.class)}
+                      className={`w-8 h-8 rounded-full border-2 transition-all text-xs flex items-center justify-center ${getCurrentWallpaper() === wp.class ? 'border-fuchsia-500 scale-110 shadow-md' : 'border-white shadow-sm'} ${wp.class}`}
+                      title={wp.label}>{wp.icon}</button>
                   ))}
                 </div>
               </div>
-              <div className="w-px h-10 bg-slate-200 mx-2 shrink-0" />
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-black text-slate-400">ورق الحائط:</span>
-                <div className="flex gap-2">
-                  {WALLPAPER_OPTIONS.map((wp) => (
-                    <button 
-                      key={wp.id} 
-                      onClick={() => handleUpdateWallpaper(wp.class)}
-                      className={`w-10 h-10 rounded-full border-2 transition-all flex items-center justify-center text-xs ${hostProfile.houseConfig?.wallpaper === wp.class ? 'border-pink-500 scale-110 shadow-md' : 'border-white'} ${wp.class}`}
-                      title={wp.label}
-                    >
-                      {wp.icon}
-                    </button>
+              <div className="flex-1">
+                <div className="text-[10px] font-black text-slate-400 mb-1.5">الأرضية</div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {FLOOR_OPTIONS.map(fl => (
+                    <button key={fl.id} onClick={() => handleUpdateFloor(fl.class)}
+                      className={`w-8 h-8 rounded-full border-2 transition-all text-xs flex items-center justify-center ${getCurrentFloor() === fl.class ? 'border-fuchsia-500 scale-110 shadow-md' : 'border-white shadow-sm'} ${fl.class}`}
+                      title={fl.label}>{fl.icon}</button>
                   ))}
                 </div>
               </div>
-              <div className="w-px h-10 bg-slate-200 mx-2 shrink-0" />
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-black text-slate-400">الأرضية:</span>
-                <div className="flex gap-2">
-                  {FLOOR_OPTIONS.map((fl) => (
-                    <button 
-                      key={fl.id} 
-                      onClick={() => handleUpdateFloor(fl.class)}
-                      className={`w-10 h-10 rounded-full border-2 transition-all flex items-center justify-center text-xs ${hostProfile.houseConfig?.floor === fl.class ? 'border-pink-500 scale-110 shadow-md' : 'border-white'} ${fl.class}`}
-                      title={fl.label}
-                    >
-                      {fl.icon}
-                    </button>
-                  ))}
-                </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── WARDROBE PANEL ── */}
+      <AnimatePresence>
+        {showWardrobe && (
+          <motion.div initial={{ opacity: 0, x: 80 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 80 }}
+            className="absolute top-24 left-4 bottom-4 z-50 w-80 bg-white/97 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-fuchsia-100 flex flex-col overflow-hidden">
+
+            {/* Header */}
+            <div className="bg-gradient-to-r from-fuchsia-500 to-pink-500 p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shirt className="w-5 h-5 text-white" />
+                <span className="font-black text-white">خزانة الملابس</span>
               </div>
-              <div className="w-px h-10 bg-slate-200 mx-2 shrink-0" />
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-black text-slate-400">الأثاث:</span>
-                <div className="flex gap-2">
-                  {FURNITURE_OPTIONS.map((opt) => (
-                    <button key={opt.type} onClick={() => handleAddItem(opt)} className="w-12 h-12 bg-slate-50 rounded-xl shadow-sm flex items-center justify-center text-2xl hover:scale-110 hover:bg-white hover:shadow-md transition-all border-2 border-slate-100 shrink-0">
-                      {opt.emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="w-px h-10 bg-slate-200 mx-2 shrink-0" />
-              <button onClick={handleMagicDecorate} disabled={isMagicDecorating} className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-3 rounded-2xl font-black shadow-lg hover:scale-105 transition-all flex items-center gap-2 disabled:opacity-50 shrink-0">
-                <Sparkles className={`w-5 h-5 ${isMagicDecorating ? 'animate-spin' : ''}`} />
-                {isMagicDecorating ? 'جاري التزيين...' : 'تزيين سحري'}
+              <button onClick={() => setShowWardrobe(false)} className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center text-white hover:bg-white/30">
+                <X className="w-4 h-4" />
               </button>
             </div>
-          ) : (
-            <div className="flex gap-3 items-center px-2">
-              <ActionButton icon={<Coffee className="w-7 h-7" />} label="شاي" color="bg-amber-400" onClick={() => handleAction('tea')} disabled={isActionBusy} />
-              <ActionButton icon={<Cookie className="w-7 h-7" />} label="حلوى" color="bg-pink-400" onClick={() => handleAction('sweets')} disabled={isActionBusy} />
-              <ActionButton icon={<Music className="w-7 h-7" />} label="موسيقى" color="bg-purple-400" onClick={() => handleAction('music')} disabled={isActionBusy} />
-              <ActionButton icon={<PartyPopper className="w-7 h-7" />} label="رقص" color="bg-indigo-400" onClick={() => handleAction('dance')} disabled={isActionBusy} />
-              
-              {visitId !== 'self' && (
-                <>
-                  <div className="w-px h-12 bg-slate-200 mx-2" />
-                  <ActionButton icon={<Gamepad2 className="w-7 h-7" />} label="لعبة" color="bg-orange-400" onClick={handleStartGame} />
-                  <ActionButton icon={<Heart className="w-7 h-7" />} label="قلب" color="bg-rose-400" onClick={() => handleAction('heart')} disabled={isActionBusy} />
-                  <ActionButton icon={<Star className="w-7 h-7" />} label="نجمة" color="bg-yellow-400" onClick={() => handleAction('star')} disabled={isActionBusy} />
-                  <ActionButton icon={<Smile className="w-7 h-7" />} label="ضحك" color="bg-sky-400" onClick={() => handleAction('laugh')} disabled={isActionBusy} />
-                </>
+
+            {/* Doll preview */}
+            <div className="flex items-center justify-center py-5 bg-gradient-to-b from-fuchsia-50 to-pink-50 border-b border-pink-100">
+              {previewAvatar && <Doll avatar={previewAvatar} size="lg" />}
+            </div>
+
+            {/* Tabs */}
+            <div className="flex gap-1 p-2 bg-slate-50 border-b border-slate-100">
+              {(['dresses', 'hair', 'accessories', 'skinColor'] as WardrobeTab[]).map(tab => {
+                const labels: Record<WardrobeTab, string> = { dresses: '👗 فساتين', hair: '💇 شعر', accessories: '🎀 إكسسوار', skinColor: '🎨 لون' };
+                return (
+                  <button key={tab} onClick={() => setWardrobeTab(tab)}
+                    className={`flex-1 py-2 rounded-xl text-[10px] font-black transition-all ${wardrobeTab === tab ? 'bg-fuchsia-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+                    {labels[tab]}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Items */}
+            <div className="flex-1 overflow-y-auto p-3">
+              {wardrobeTab === 'dresses' && (
+                <div className="grid grid-cols-4 gap-2">
+                  {WARDROBE.dresses.map(item => (
+                    <motion.button key={item.id} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+                      onClick={() => handleWardrobeChange('dressStyle', item.emoji)}
+                      className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-3xl transition-all border-2 ${previewAvatar?.dressStyle === item.emoji ? 'border-fuchsia-500 bg-fuchsia-50 shadow-md' : 'border-slate-100 bg-slate-50 hover:border-fuchsia-200'}`}>
+                      {item.emoji}
+                      <span className="text-[9px] font-bold text-slate-400 mt-0.5">{item.label}</span>
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+              {wardrobeTab === 'hair' && (
+                <div className="grid grid-cols-4 gap-2">
+                  {WARDROBE.hair.map(item => (
+                    <motion.button key={item.id} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+                      onClick={() => handleWardrobeChange('hairStyle', item.emoji)}
+                      className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-3xl transition-all border-2 ${previewAvatar?.hairStyle === item.emoji ? 'border-fuchsia-500 bg-fuchsia-50 shadow-md' : 'border-slate-100 bg-slate-50 hover:border-fuchsia-200'}`}>
+                      {item.emoji}
+                      <span className="text-[9px] font-bold text-slate-400 mt-0.5">{item.label}</span>
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+              {wardrobeTab === 'accessories' && (
+                <div className="grid grid-cols-4 gap-2">
+                  {WARDROBE.accessories.map(item => (
+                    <motion.button key={item.id} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+                      onClick={() => handleWardrobeChange('accessory', item.emoji)}
+                      className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-3xl transition-all border-2 ${previewAvatar?.accessory === item.emoji ? 'border-fuchsia-500 bg-fuchsia-50 shadow-md' : 'border-slate-100 bg-slate-50 hover:border-fuchsia-200'}`}>
+                      {item.emoji}
+                      <span className="text-[9px] font-bold text-slate-400 mt-0.5">{item.label}</span>
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+              {wardrobeTab === 'skinColor' && (
+                <div className="grid grid-cols-3 gap-3">
+                  {WARDROBE.skinColor.map(item => (
+                    <motion.button key={item.id} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                      onClick={() => handleWardrobeChange('color', item.class)}
+                      className={`h-16 rounded-2xl ${item.class} flex items-end justify-center pb-2 transition-all border-2 ${previewAvatar?.color === item.class ? 'border-fuchsia-500 shadow-md scale-105' : 'border-white'}`}>
+                      <span className="text-[10px] font-black text-slate-600 bg-white/70 px-2 py-0.5 rounded-full">{item.label}</span>
+                    </motion.button>
+                  ))}
+                </div>
               )}
             </div>
+
+            {/* Save outfit */}
+            {isHost && (
+              <div className="p-3 border-t border-slate-100">
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  onClick={handleSaveOutfit} disabled={isSaving}
+                  className="w-full bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white font-black py-3 rounded-2xl shadow-lg flex items-center justify-center gap-2 disabled:opacity-60">
+                  {isSaving ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full" /> : <Save className="w-5 h-5" />}
+                  حفظي مظهري الجديد
+                </motion.button>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── CHAT WIDGET ── */}
+      {visitId !== 'self' && (
+        <div className="absolute bottom-4 left-4 z-50 w-72 pointer-events-auto">
+          <AnimatePresence>
+            {showChat && (
+              <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.9 }}
+                className="bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-white overflow-hidden flex flex-col mb-3" style={{ height: '340px' }}>
+                <div className="bg-sky-100 p-3 flex justify-between items-center border-b-2 border-white">
+                  <h3 className="font-black text-sky-600 flex items-center gap-2 text-sm"><MessageCircle className="w-4 h-4" /> الدردشة</h3>
+                  <button onClick={() => setShowChat(false)} className="text-sky-400 hover:text-sky-600"><X className="w-4 h-4" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {messages.map(msg => (
+                    <div key={msg.id} className={`flex flex-col ${msg.senderId === activeChild?.uid ? 'items-start' : 'items-end'}`}>
+                      <span className="text-[9px] font-bold text-slate-400 mb-0.5 px-2">{msg.senderName}</span>
+                      <div className={`px-3 py-2 rounded-2xl max-w-[90%] font-bold text-sm shadow-sm ${msg.senderId === activeChild?.uid ? 'bg-sky-500 text-white rounded-tr-sm' : 'bg-slate-100 text-slate-700 rounded-tl-sm'}`}>
+                        {msg.text}
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={scrollRef} />
+                </div>
+                <form onSubmit={handleSendMessage} className="p-2 bg-slate-50 border-t-2 border-white flex gap-2">
+                  <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="اكتبي رسالة..." className="flex-1 bg-white border-2 border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-sky-400 font-bold text-sm" />
+                  <button type="submit" disabled={!newMessage.trim()} className="bg-sky-500 text-white p-2 rounded-xl hover:bg-sky-600 disabled:opacity-50"><Send className="w-4 h-4" /></button>
+                </form>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {!showChat && (
+            <button onClick={() => setShowChat(true)} className="w-14 h-14 bg-sky-500 text-white rounded-full shadow-2xl flex items-center justify-center border-4 border-white hover:scale-110 transition-transform">
+              <MessageCircle className="w-7 h-7" />
+            </button>
           )}
         </div>
-      </div>
+      )}
+
+      {/* ── GAME WIDGET ── */}
+      {visitId !== 'self' && (
+        <div className="absolute bottom-4 right-[140px] sm:right-[170px] z-50 w-72 pointer-events-auto flex flex-col justify-end items-end">
+          <AnimatePresence>
+            {visit?.gameState?.type === 'tictactoe' && (
+              <motion.div initial={{ opacity: 0, scale: 0.8, y: 50 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8, y: 50 }}
+                className="bg-white/97 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-orange-100 p-5 w-full mb-3">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-black text-orange-500 flex items-center gap-2"><Gamepad2 className="w-5 h-5" /> إكس أو</h3>
+                  <button onClick={handleCloseGame} className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-500"><X className="w-4 h-4" /></button>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  {visit.gameState.board?.map((cell, idx) => (
+                    <button key={idx} onClick={() => handleMakeMove(idx)}
+                      disabled={cell !== null || !!visit.gameState?.winner || (!isLocalVisitMode && (!myMarker || visit.gameState?.turn !== myMarker))}
+                      className={`aspect-square rounded-2xl text-3xl font-black flex items-center justify-center shadow-inner transition-colors ${cell === 'X' ? 'bg-orange-100 text-orange-500' : cell === 'O' ? 'bg-sky-100 text-sky-500' : 'bg-slate-50 hover:bg-slate-100'}`}>
+                      {cell}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-center font-bold text-slate-600 bg-slate-50 py-2 rounded-xl text-sm">
+                  {visit.gameState.winner
+                    ? (visit.gameState.winner === 'draw' ? 'تعادل! 🤝' : visit.gameState.winner === myMarker ? 'فزتِ! 🎉' : 'فازت صديقتكِ! 👏')
+                    : isLocalVisitMode ? `الدور: ${visit.gameState.turn}` : visit.gameState.turn === myMarker ? 'دوركِ ✨' : 'انتظري ⏳'
+                  }
+                </div>
+                {(visit.gameState.winner || visit.gameState.isDraw) && (
+                  <button onClick={handleStartGame} className="mt-3 w-full bg-orange-500 text-white font-black py-2.5 rounded-xl shadow-md hover:bg-orange-600 text-sm">العب مرة أخرى</button>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* ── ACTION BAR (bottom center) ── */}
+      {!isEditing && !showWardrobe && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
+          <div className="bg-white/93 backdrop-blur-xl px-4 py-3 rounded-[2rem] shadow-2xl border-4 border-white flex gap-2 items-center">
+            {[
+              { type: 'tea' as const, emoji: '☕', label: 'شاي' },
+              { type: 'sweets' as const, emoji: '🍰', label: 'حلوى' },
+              { type: 'juice' as const, emoji: '🍹', label: 'عصير' },
+              { type: 'cookies' as const, emoji: '🍪', label: 'بسكويت' },
+              { type: 'music' as const, emoji: '🎵', label: 'موسيقى' },
+              { type: 'dance' as const, emoji: '💃', label: 'رقص' },
+              { type: 'heart' as const, emoji: '💖', label: 'حب' },
+              { type: 'star' as const, emoji: '⭐', label: 'نجمة' },
+              { type: 'laugh' as const, emoji: '😂', label: 'ضحك' },
+              { type: 'wow' as const, emoji: '😲', label: 'واو' },
+            ].map(action => (
+              <motion.button key={action.type} whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }}
+                onClick={() => handleAction(action.type)}
+                className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-50 hover:bg-fuchsia-50 border-2 border-slate-100 hover:border-fuchsia-300 flex items-center justify-center text-xl sm:text-2xl shadow-sm transition-all"
+                title={action.label}>
+                {action.emoji}
+              </motion.button>
+            ))}
+          </div>
+        </div>
+      )}
 
     </div>
-  );
-}
-
-function ActionButton({ icon, label, color, onClick, disabled = false }: { icon: React.ReactNode, label: string, color: string, onClick: () => void, disabled?: boolean }) {
-  return (
-    <motion.button
-      whileHover={disabled ? undefined : { scale: 1.1, y: -5 }}
-      whileTap={disabled ? undefined : { scale: 0.95 }}
-      onClick={onClick}
-      disabled={disabled}
-      className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-colors min-w-[4.5rem] ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`}
-    >
-      <div className={`w-14 h-14 ${color} text-white rounded-full flex items-center justify-center shadow-lg border-2 border-white/50`}>
-        {icon}
-      </div>
-      <span className="text-xs font-black text-slate-500">{label}</span>
-    </motion.button>
-  );
-}
-
-function Doll({ avatar, isDancing }: { avatar: AvatarConfig, isDancing?: boolean }) {
-  return (
-    <motion.div 
-      className="relative flex flex-col items-center justify-center"
-      animate={isDancing ? {
-        y: [0, -20, 0],
-        rotate: [-10, 10, -10],
-      } : {
-        y: [0, -5, 0]
-      }}
-      transition={isDancing ? {
-        duration: 0.5,
-        repeat: Infinity,
-        ease: "easeInOut"
-      } : {
-        duration: 3,
-        repeat: Infinity,
-        ease: "easeInOut"
-      }}
-    >
-      {/* Wings */}
-      {avatar.wings && (
-        <motion.div 
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-8xl -z-10 opacity-80"
-          animate={{ scale: [1, 1.1, 1], rotate: [-5, 5, -5] }}
-          transition={{ duration: 2, repeat: Infinity }}
-        >
-          {avatar.wings}
-        </motion.div>
-      )}
-
-      {/* Cape */}
-      {avatar.cape && (
-        <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-40 ${avatar.cape} rounded-b-full -z-5 opacity-90`} />
-      )}
-
-      {/* Body/Head */}
-      <div className={`w-32 h-32 ${avatar.color || 'bg-pink-200'} rounded-full flex flex-col items-center justify-center relative shadow-xl border-4 border-white/50`}>
-        {/* Crown */}
-        {avatar.accessory && (
-          <div className="absolute -top-10 text-5xl drop-shadow-md z-20">
-            {avatar.accessory}
-          </div>
-        )}
-        
-        {/* Hair */}
-        <div className="absolute -top-6 text-6xl drop-shadow-sm z-10">
-          {avatar.hairStyle || '👧'}
-        </div>
-
-        {/* Face */}
-        <div className="flex gap-3 mt-2 z-10">
-          <span className={`text-2xl font-black ${avatar.eyeColor || 'text-slate-900'}`}>{avatar.eyes || '●'}</span>
-          <span className={`text-2xl font-black ${avatar.eyeColor || 'text-slate-900'}`}>{avatar.eyes || '●'}</span>
-        </div>
-        <div className="w-4 h-2 border-b-4 border-pink-400 rounded-full mt-2 z-10 opacity-60" />
-      </div>
-
-      {/* Dress */}
-      <div className="text-7xl -mt-4 drop-shadow-lg z-10">
-        {avatar.dressStyle || '👗'}
-      </div>
-
-      {/* Shoes */}
-      <div className="text-4xl -mt-4 drop-shadow-md z-0">
-        {avatar.shoes || '🥿'}
-      </div>
-
-      {/* Wand */}
-      {avatar.wand && (
-        <motion.div 
-          className="absolute top-1/2 -left-10 text-5xl drop-shadow-lg z-20"
-          animate={{ rotate: [-10, 10, -10] }}
-          transition={{ duration: 2, repeat: Infinity }}
-        >
-          {avatar.wand}
-        </motion.div>
-      )}
-    </motion.div>
   );
 }
