@@ -36,7 +36,6 @@ export default function IdeaChatbot() {
   }, [activeChild, activeAssistant.name, activeAssistant.emoji, messages.length]);
 
   useEffect(() => {
-@@ -39,116 +39,131 @@ export default function IdeaChatbot() {
     if (!activeChild) return;
     const heroName = activeChild.heroName || activeChild.name || 'بطلتنا';
     setMessages([
@@ -62,7 +61,6 @@ export default function IdeaChatbot() {
     setIsTyping(true);
 
     const heroName = activeChild.heroName || activeChild.name || 'بطلتنا';
-    const ideaIntent = /(فكرة|اقتراح|تطوير|طلب|اضافة|إضافة|ميزة جديدة|عاوز|عايزة)/i.test(userMsg);
 
     try {
       // 1. Call our custom Backend API (ChatGPT Proxy)
@@ -112,7 +110,6 @@ export default function IdeaChatbot() {
       // 3. Save to Firestore for Admin monitoring
       try {
         await Promise.all([
-        const writes: Promise<any>[] = [
           addDoc(collection(db, 'idea_chats'), {
             childId: activeChild.uid,
             childName: heroName,
@@ -130,21 +127,7 @@ export default function IdeaChatbot() {
             status: 'read'
           })
         ]);
-        ];
-
-        if (ideaIntent) {
-          writes.push(
-            addDoc(collection(db, 'feature_ideas'), {
-              childId: activeChild.uid,
-              childName: heroName,
-              idea: userMsg,
-              createdAt: Date.now(),
-              status: 'new'
-            })
-          );
-        }
-
-        await Promise.all(writes);
+    
       } catch (dbError) {
         console.error('Firestore save failed:', dbError);
       }
