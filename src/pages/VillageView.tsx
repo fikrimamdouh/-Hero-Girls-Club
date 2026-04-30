@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ArrowLeft, Home, MessageCircle, Users, Sparkles, Shield, Star } from 'lucide-react';
+import { ArrowLeft, Home, MessageCircle, Users, Sparkles, Shield, Star, MapPin, ChevronRight, ChevronLeft } from 'lucide-react';
 
 export default function VillageView() {
   const navigate = useNavigate();
@@ -93,6 +93,39 @@ export default function VillageView() {
                 <p className="text-white/70 mt-2">سيُبنى هنا نظام المدينة والبيوت خطوة بخطوة.</p>
               </div>
             )}
+          </div>
+        </section>
+
+        <section className="grid md:grid-cols-3 gap-4">
+          <div className="rounded-[2rem] bg-white/10 border border-white/15 backdrop-blur-xl p-6 md:col-span-2">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-cyan-300" />
+                <h2 className="font-black text-xl">مسار المدينة</h2>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-white/70">
+                <ChevronLeft className="w-4 h-4" />
+                <span>RTL</span>
+                <ChevronRight className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              {['ساحة الصديقات', 'بيت المساعدة', 'غرفة الرسائل', 'حديقة اللقاء'].map((item) => (
+                <div key={item} className="rounded-2xl bg-black/15 border border-white/10 p-4 flex items-center justify-between">
+                  <span className="font-black">{item}</span>
+                  <span className="text-xl">✨</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] bg-white/10 border border-white/15 backdrop-blur-xl p-6 space-y-3">
+            <h2 className="font-black text-xl">المرحلة التالية</h2>
+            <p className="text-sm text-white/75 leading-7">سيتم ربط البيوت والدردشة والسجل والأمان تدريجيًا بدون إعادة كتابة المشروع.</p>
+            <div className="rounded-2xl bg-emerald-500/15 border border-emerald-300/20 p-4 text-sm">
+              <div className="font-black mb-1">جاهز للتوسعة</div>
+              <div className="text-white/70">الهيكل الحالي ثابت وقابل للبناء عليه.</div>
+            </div>
           </div>
         </section>
       </main>
