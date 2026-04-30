@@ -92,7 +92,7 @@ export const MARIA_GAMES: MariaGame[] = [
   { id: 'f36', title: 'Pizza Delivery', category: 'girls', emoji: '🛵', color: 'from-red-500 to-orange-600', size: 'medium', image: '/games/vortellis-pizza-delivery.png' },
 ];
 
-const POKI_EXTERNAL_URLS: Partial<Record<MariaGame['id'], string>> = {
+const EMBEDDED_GAME_URLS: Partial<Record<MariaGame['id'], string>> = {
   p2: 'https://poki.com/en/g/fireboy-and-watergirl-1-forest-temple',
   p4: 'https://poki.com/ar/g/level-devil',
   p6: 'https://poki.com/en/g/temple-run-2',
@@ -117,5 +117,5 @@ const POKI_EXTERNAL_URLS: Partial<Record<MariaGame['id'], string>> = {
 
 export const MARIA_GAMES_WITH_SOURCE: MariaGame[] = MARIA_GAMES.map((game) => ({
   ...game,
-  externalUrl: POKI_EXTERNAL_URLS[game.id],
+  externalUrl: EMBEDDED_GAME_URLS[game.id],
 }));

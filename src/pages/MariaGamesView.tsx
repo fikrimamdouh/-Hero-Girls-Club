@@ -2,7 +2,7 @@ import { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { MARIA_GAMES_WITH_SOURCE, MARIA_CATEGORIES, MariaGameCategory, MariaGame } from '../data/mariaGamesData';
-import { Search, ArrowRight, X, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ArrowRight, X, ExternalLink, ChevronLeft, ChevronRight, Play } from 'lucide-react';
 
 export default function MariaGamesView() {
   const navigate = useNavigate();
@@ -19,9 +19,7 @@ export default function MariaGamesView() {
     });
   }, [activeCategory, searchQuery]);
 
-  const getGamePlayUrl = (game: MariaGame) =>
-    game.externalUrl || game.route || `https://poki.com/ar/search?query=${encodeURIComponent(game.title)}`;
-
+  const getGamePlayUrl = (game: MariaGame) => game.externalUrl || game.route || '';
   const isEmbeddable = (url: string) => !!url && !/poki\.com/i.test(url);
 
   const scrollTabs = (dir: 'left' | 'right') => {
@@ -224,12 +222,9 @@ export default function MariaGamesView() {
                     <ExternalLink className="w-4 h-4" />
                     فتح اللعبة
                   </a>
-                  <button
-                    onClick={() => setSelectedGame(null)}
-                    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-red-500/30 text-white flex items-center justify-center transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+                    <button onClick={() => setSelectedGame(null)} className="w-9 h-9 rounded-xl bg-white/10 hover:bg-red-500/30 text-white flex items-center justify-center transition-colors">
+                      <X className="w-5 h-5" />
+                    </button>
                 </div>
               </div>
 
