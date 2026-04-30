@@ -405,25 +405,33 @@ export default function HeroHouse() {
 
   /* ─── WARDROBE HANDLERS ──────────────────────────────────── */
   const handleWardrobeChange = (field: keyof AvatarConfig, value: string) => {
-    if (!previewAvatar) return;
-    setPreviewAvatar(prev => prev ? { ...prev, [field]: value } : prev);
+    if (!previewAvatar || !activeChild) return;
+    const newAvatar = { ...previewAvatar, [field]: value };
+    setPreviewAvatar(newAvatar);
+    /* queue debounced Firestore save so wardrobe changes persist automatically */
+    queueSave(activeChild.uid, { avatar: newAvatar });
   };
 
   const handleSaveOutfit = async () => {
     if (!activeChild || !previewAvatar) return;
+    /* flush any pending wardrobe (and house) changes immediately */
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const snapshot = { ...pendingSave.current, avatar: previewAvatar };
+    pendingSave.current = {};
+    setIsSaving(true);
     try {
-      setIsSaving(true);
-      await updateDoc(doc(db, 'children_profiles', activeChild.uid), { avatar: previewAvatar });
+      await updateDoc(doc(db, 'children_profiles', activeChild.uid), snapshot);
+      setLocalRoomFurniture({});
       const stored = localStorage.getItem('active_child');
       if (stored) {
         const parsed = JSON.parse(stored) as ChildProfile;
         parsed.avatar = previewAvatar;
         localStorage.setItem('active_child', JSON.stringify(parsed));
       }
-      toast.success('تم حفظ المظهر الجديد! ✨');
-      playSound('magic');
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2000);
+      toast.success('تم حفظ المظهر الجديد! ✨');
+      playSound('magic');
       setShowWardrobe(false);
     } catch { toast.error('خطأ في حفظ المظهر'); }
     finally { setIsSaving(false); }
@@ -561,7 +569,10 @@ export default function HeroHouse() {
   const currentFurniture = getCurrentRoomFurniture();
   const currentWall = getCurrentWallpaper();
   const currentFloor = getCurrentFloor();
-  const hostAvatar = visitId === 'self' ? (previewAvatar || activeChild?.avatar) : visit.toAvatar;
+  /* when the current user is the host, always reflect live previewAvatar so wardrobe changes show instantly */
+  const hostAvatar = isHost
+    ? (previewAvatar || hostProfile?.avatar)
+    : (visit.toAvatar || hostProfile?.avatar);
   const visitorAvatar = visitId === 'self' ? null : visit.fromAvatar;
   const myMarker = visit.gameState
     ? (visit.gameState.playerX === activeChild?.uid ? 'X' : visit.gameState.playerO === activeChild?.uid ? 'O' : null)
