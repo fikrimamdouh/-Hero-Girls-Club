@@ -1,46 +1,32 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Room, RoomEvent, Track, type RemoteParticipant, type LocalParticipant } from 'livekit-client';
+import { PhoneOff, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { CallSession } from '../types';
-import { Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-react';
-import { CallService, CallState } from '../services/callService';
 
-interface CallScreenProps {
+
+interface Props {
   call: CallSession;
   isCaller: boolean;
   onEndCall: () => void;
 }
 
-export const CallScreen: React.FC<CallScreenProps> = ({ call, isCaller, onEndCall }) => {
-  const [callState, setCallState] = useState<CallState>('idle');
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOff, setIsVideoOff] = useState(call.type === 'audio');
-  
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const callServiceRef = useRef<CallService | null>(null);
-  const isMounted = useRef(true);
+type UiState = 'calling' | 'ringing' | 'connected' | 'ended';
+
+export const CallScreen: React.FC<Props> = ({ call, onEndCall }) => {
+  const activeChild = useMemo(() => JSON.parse(localStorage.getItem('active_child') || 'null'), []);
+  const roomRef = useRef<Room | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [uiState, setUiState] = useState<UiState>(call.status === 'accepted' ? 'connected' : 'calling');
+  const [audioOff, setAudioOff] = useState(false);
+  const [videoOff, setVideoOff] = useState(false);
+  const [participants, setParticipants] = useState<(RemoteParticipant | LocalParticipant)[]>([]);
 
   useEffect(() => {
-    isMounted.current = true;
-    
-    if (!callServiceRef.current) {
-      const service = new CallService(
-        call.id,
-        call.chatId,
-        isCaller,
-        call.type,
-        {
-          onStateChange: (state) => {
-            if (isMounted.current) {
-              setCallState(state);
-            }
-            if (state === 'ended' || state === 'error') {
-              setTimeout(() => {
-                if (isMounted.current) {
-                  onEndCall();
-                }
-              }, 1500);
-            }
-          },
+   let mounted = true;
+    const connect = async () => {
+      const room = new Room();
+      roomRef.current = room;
+
           onLocalStream: (stream) => {
             if (localVideoRef.current) {
               localVideoRef.current.srcObject = stream;
@@ -57,117 +43,76 @@ export const CallScreen: React.FC<CallScreenProps> = ({ call, isCaller, onEndCal
         }
       );
 
-      callServiceRef.current = service;
-      service.start();
-    }
+   room.on(RoomEvent.Connected, () => mounted && setUiState('connected'));
+      room.on(RoomEvent.Disconnected, () => {
+        if (!mounted) return;
+        setUiState('ended');
+        onEndCall();
+      });
+      const sync = () => {
+        const remotes = Array.from(room.remoteParticipants.values());
+        setParticipants([room.localParticipant, ...remotes]);
+      };
+      room.on(RoomEvent.ParticipantConnected, sync);
+      room.on(RoomEvent.ParticipantDisconnected, sync);
+      room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
+        if (track.kind === Track.Kind.Video) {
+          const el = track.attach();
+          el.className = 'w-full h-full object-cover rounded-xl';
+          const slot = document.getElementById(`video-${participant.identity}`);
+          slot?.replaceChildren(el);
+        }
+      });
+      room.on(RoomEvent.LocalTrackPublished, () => {
+        const localTrack = room.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
+        if (localTrack && localVideoRef.current) {
+          const el = localTrack.attach();
+          el.className = 'w-full h-full object-cover rounded-xl';
+          localVideoRef.current.replaceWith(el as HTMLVideoElement);
+        }
+      });
 
-    return () => {
-      isMounted.current = false;
-      if (callServiceRef.current) {
-        callServiceRef.current.hangup();
-        callServiceRef.current = null;
-      }
+   const roomName = `call_${call.chatId}_${call.id}`;
+      const resp = await fetch('/api/livekit-token', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomName, participantName: activeChild?.name || 'Hero', participantId: activeChild?.uid || crypto.randomUUID() })
+      });
+      const data = await resp.json();
+      await room.connect(data.url, data.token);
+      await room.localParticipant.setMicrophoneEnabled(true);
+      await room.localParticipant.setCameraEnabled(call.type === 'video');
+      sync();
     };
-  }, [call.id, isCaller, call.type, onEndCall]);
 
-  const handleHangup = () => {
-    if (callServiceRef.current) {
-      callServiceRef.current.hangup();
-    } else {
-      onEndCall();
-    }
+
+   connect().catch(() => { setUiState('ended'); onEndCall(); });
+    return () => { mounted = false; roomRef.current?.disconnect(); };
+  }, [activeChild, call.chatId, call.id, call.type, onEndCall]);
+
+
+const toggleAudio = async () => {
+    if (!roomRef.current) return;
+    await roomRef.current.localParticipant.setMicrophoneEnabled(audioOff);
+    setAudioOff(!audioOff);
   };
 
-  const toggleMute = () => {
-    if (callServiceRef.current) {
-      const muted = callServiceRef.current.toggleAudio();
-      setIsMuted(muted);
-    }
+  const toggleVideo = async () => {
+    if (!roomRef.current) return;
+    await roomRef.current.localParticipant.setCameraEnabled(videoOff);
+    setVideoOff(!videoOff);
   };
 
-  const toggleVideo = () => {
-    if (callServiceRef.current) {
-      const videoOff = callServiceRef.current.toggleVideo();
-      setIsVideoOff(videoOff);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-slate-900 z-50 flex flex-col items-center justify-center">
-      {call.type === 'video' ? (
-        <div className="relative w-full h-full max-w-4xl max-h-[80vh] bg-black rounded-3xl overflow-hidden shadow-2xl">
-          <video 
-            ref={remoteVideoRef} 
-            autoPlay 
-            playsInline 
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute bottom-4 right-4 w-32 h-48 bg-slate-800 rounded-xl overflow-hidden border-2 border-slate-700 shadow-lg">
-            <video 
-              ref={localVideoRef} 
-              autoPlay 
-              playsInline 
-              muted 
-              className="w-full h-full object-cover"
-            />
-          </div>
-          
-          {callState !== 'connected' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-              <div className="text-center">
-                <div className="text-white text-xl mb-2">
-                  {callState === 'calling' ? 'جاري الاتصال...' : 
-                   callState === 'ringing' ? 'يرن...' : 
-                   callState === 'ended' ? 'تم إنهاء المكالمة' : 
-                   callState === 'error' ? 'حدث خطأ في الاتصال' : ''}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center space-y-8">
-          <div className={`w-32 h-32 bg-slate-800 rounded-full flex items-center justify-center text-6xl shadow-xl ${callState !== 'connected' && callState !== 'ended' && callState !== 'error' ? 'animate-pulse' : ''}`}>
-            {call.callerAvatar?.hairStyle === 'spiky' ? '👦' : '👧'}
-          </div>
-          <div className="text-center">
-            <h2 className="text-3xl font-bold text-white mb-2">
-              {callState === 'calling' ? 'جاري الاتصال...' : 
-               callState === 'ringing' ? 'يرن...' : 
-               callState === 'connected' ? call.callerName :
-               callState === 'ended' ? 'تم إنهاء المكالمة' : 
-               callState === 'error' ? 'حدث خطأ في الاتصال' : call.callerName}
-            </h2>
-            <p className="text-slate-400">مكالمة صوتية</p>
-          </div>
-          <audio ref={remoteVideoRef} autoPlay playsInline className="hidden" />
-        </div>
-      )}
-
-      <div className="absolute bottom-10 flex items-center gap-6 bg-slate-800/80 backdrop-blur-md px-8 py-4 rounded-full">
-        <button 
-          onClick={toggleMute}
-          className={`p-4 rounded-full transition-colors ${isMuted ? 'bg-red-500 text-white' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'}`}
-        >
-          {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-        </button>
-        
-        {call.type === 'video' && (
-          <button 
-            onClick={toggleVideo}
-            className={`p-4 rounded-full transition-colors ${isVideoOff ? 'bg-red-500 text-white' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'}`}
-          >
-            {isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
-          </button>
-        )}
-
-        <button 
-          onClick={handleHangup}
-          className="p-4 bg-red-500 hover:bg-red-600 text-white rounded-full transition-colors shadow-lg shadow-red-500/20"
-        >
-          <PhoneOff className="w-6 h-6" />
-        </button>
-      </div>
+ return <div className="fixed inset-0 z-50 bg-slate-900 p-4">
+    <div className="text-white text-center mb-3">{uiState}</div>
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 h-[78vh]">
+      <div className="bg-slate-800 rounded-xl overflow-hidden" id="video-local"><video ref={localVideoRef} autoPlay muted playsInline className='w-full h-full object-cover rounded-xl'/></div>
+      {participants.slice(1).map((p) => <div key={p.identity} id={`video-${p.identity}`} className="bg-slate-800 rounded-xl" />)}
     </div>
-  );
+    <div className="flex justify-center gap-3 mt-4">
+      <button onClick={toggleAudio} className="p-3 rounded-full bg-slate-700 text-white">{audioOff ? <MicOff/> : <Mic/>}</button>
+      {call.type === 'video' && <button onClick={toggleVideo} className="p-3 rounded-full bg-slate-700 text-white">{videoOff ? <VideoOff/> : <Video/>}</button>}
+      <button onClick={() => { roomRef.current?.disconnect(); onEndCall(); }} className="p-3 rounded-full bg-red-500 text-white"><PhoneOff/></button>
+    </div>
+    </div>
+  </div>;
 };
