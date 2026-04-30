@@ -1,18 +1,16 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Send, LogOut, Sparkles, MessageCircle, Star, Heart, Shield, Users,
-  Coffee, Cookie, Music, PartyPopper, Video, Mic, MicOff, VideoOff,
-  Camera, Palette, Wand2, Plus, Trash2, Gamepad2, X, Smile, Minus,
-  RotateCw, ChevronUp, ChevronDown, ArrowLeft, Home, Shirt, Save, Check
+  Send, LogOut, Camera, Palette, Wand2, Plus, Trash2, Gamepad2,
+  X, Minus, RotateCw, Shirt, Save, Check, MessageCircle
 } from 'lucide-react';
 import { db } from '../firebase';
 import {
   doc, onSnapshot, collection, addDoc, query, where, orderBy,
   updateDoc, getDoc
 } from 'firebase/firestore';
-import { ChildProfile, VisitRequest, ChatMessage, AvatarConfig, HouseItem, HouseConfig } from '../types';
+import { ChildProfile, VisitRequest, ChatMessage, AvatarConfig, HouseItem, RoomConfig } from '../types';
 import { toast } from 'sonner';
 import { GoogleGenAI } from '@google/genai';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
@@ -219,7 +217,28 @@ export default function HeroHouse() {
   const [savedFlash, setSavedFlash] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const saveDebounce = useRef<NodeJS.Timeout | null>(null);
+  const pendingSave = useRef<Record<string, unknown>>({});
+  const saveTimer = useRef<NodeJS.Timeout | null>(null);
+
+  /* ─── UNIFIED DEBOUNCED SAVE (2 seconds) ─────────────────── */
+  const queueSave = (hostUid: string, fields: Record<string, unknown>) => {
+    pendingSave.current = { ...pendingSave.current, ...fields };
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setIsSaving(true);
+    saveTimer.current = setTimeout(async () => {
+      try {
+        await updateDoc(doc(db, 'children_profiles', hostUid), pendingSave.current);
+        pendingSave.current = {};
+        setSavedFlash(true);
+        setTimeout(() => setSavedFlash(false), 2000);
+      } catch (err) {
+        console.error('Auto-save error:', err);
+        toast.error('تعذّر الحفظ، سيتم إعادة المحاولة');
+      } finally {
+        setIsSaving(false);
+      }
+    }, 2000);
+  };
 
   /* ─── LOAD DATA ─────────────────────────────────────────── */
   useEffect(() => {
@@ -231,35 +250,49 @@ export default function HeroHouse() {
 
     if (!visitId) return;
 
+    /* Determine host UID early so we can subscribe to their profile */
+    let hostUid: string;
+    let unsubHost: (() => void) | null = null;
+
+    const subscribeToHostProfile = (uid: string) => {
+      unsubHost = onSnapshot(
+        doc(db, 'children_profiles', uid),
+        (snap) => {
+          if (snap.exists()) setHostProfile(snap.data() as ChildProfile);
+        },
+        (err) => handleFirestoreError(err, OperationType.GET, `children_profiles/${uid}`)
+      );
+    };
+
     if (visitId === 'self') {
+      hostUid = currentChild.uid;
       setVisit({
         id: 'self', fromId: currentChild.uid, fromName: currentChild.name,
         fromHeroName: currentChild.heroName, fromAvatar: currentChild.avatar,
         toId: currentChild.uid, toName: currentChild.name, toAvatar: currentChild.avatar,
         status: 'accepted', timestamp: Date.now()
       });
-      setHostProfile(currentChild);
-      setPreviewAvatar(currentChild.avatar);
+      subscribeToHostProfile(hostUid);
       setLoading(false);
-      return;
+      return () => { unsubHost?.(); };
     }
 
     if (visitId.startsWith('view_')) {
-      const hostUid = visitId.replace('view_', '');
+      hostUid = visitId.replace('view_', '');
       setVisit({
         id: visitId, fromId: currentChild.uid, fromName: currentChild.name,
         fromHeroName: currentChild.heroName, fromAvatar: currentChild.avatar,
         toId: hostUid, toName: 'صديقتكِ', status: 'accepted', timestamp: Date.now()
       });
+      subscribeToHostProfile(hostUid);
       getDoc(doc(db, 'children_profiles', hostUid)).then(hDoc => {
         if (hDoc.exists()) {
           const data = hDoc.data() as ChildProfile;
-          setHostProfile(data);
           setVisit(prev => prev ? { ...prev, toName: data.heroName || data.name, toAvatar: data.avatar } : null);
         }
         setLoading(false);
       });
-      return;
+      return () => { unsubHost?.(); };
     }
 
     const unsubVisit = onSnapshot(doc(db, 'visit_requests', visitId), async (snap) => {
@@ -267,10 +300,7 @@ export default function HeroHouse() {
         const data = snap.data() as VisitRequest;
         if (!data.toId || !data.fromId) { toast.error('بيانات الزيارة غير مكتملة'); navigate('/child'); return; }
         setVisit(data);
-        if (!hostProfile || hostProfile.uid !== data.toId) {
-          const hDoc = await getDoc(doc(db, 'children_profiles', data.toId));
-          if (hDoc.exists()) setHostProfile(hDoc.data() as ChildProfile);
-        }
+        if (!unsubHost) subscribeToHostProfile(data.toId);
         if (data.status === 'ended') { toast.info('انتهت الزيارة!'); navigate('/child'); }
       } else { navigate('/child'); }
       setLoading(false);
@@ -286,7 +316,7 @@ export default function HeroHouse() {
       setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }, (err) => handleFirestoreError(err, OperationType.GET, 'chat_messages'));
 
-    return () => { unsubVisit(); unsubChat(); };
+    return () => { unsubVisit(); unsubChat(); unsubHost?.(); };
   }, [visitId, navigate]);
 
   const isLocalVisitMode = visitId === 'self' || !!visitId?.startsWith('view_');
@@ -302,33 +332,25 @@ export default function HeroHouse() {
     new Audio(sounds[type]).play().catch(() => {});
   };
 
-  const triggerSavedFlash = () => {
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 2000);
-  };
-
-  /* ─── ROOM helpers ───────────────────────────────────────── */
-  const getCurrentRoomConfig = () => {
-    return (hostProfile?.houseConfig as any)?.rooms?.[activeRoom] || null;
+  /* ─── ROOM helpers (typed, no `any`) ───────────────────────── */
+  const getCurrentRoomConfig = (): RoomConfig | null => {
+    return hostProfile?.houseConfig?.rooms?.[activeRoom] ?? null;
   };
 
   const getCurrentRoomFurniture = (): HouseItem[] => {
-    const roomConfig = getCurrentRoomConfig();
-    return roomConfig?.furniture || [];
+    return getCurrentRoomConfig()?.furniture ?? [];
   };
 
-  const getCurrentWallpaper = () => {
-    const roomConfig = getCurrentRoomConfig();
-    return roomConfig?.wallpaper || ROOMS[activeRoom].wall;
+  const getCurrentWallpaper = (): string => {
+    return getCurrentRoomConfig()?.wallpaper ?? ROOMS[activeRoom].wall;
   };
 
-  const getCurrentFloor = () => {
-    const roomConfig = getCurrentRoomConfig();
-    return roomConfig?.floor || ROOMS[activeRoom].floor;
+  const getCurrentFloor = (): string => {
+    return getCurrentRoomConfig()?.floor ?? ROOMS[activeRoom].floor;
   };
 
-  /* ─── FURNITURE HANDLERS ─────────────────────────────────── */
-  const handleAddItem = async (item: Partial<HouseItem>) => {
+  /* ─── FURNITURE HANDLERS (all via queueSave) ─────────────── */
+  const handleAddItem = (item: Partial<HouseItem>) => {
     if (!hostProfile || !isHost) return;
     const newItem: HouseItem = {
       id: Math.random().toString(36).substr(2, 9),
@@ -336,72 +358,34 @@ export default function HeroHouse() {
       x: 30 + Math.random() * 40, y: 40 + Math.random() * 30,
       scale: 1.2, rotation: 0
     };
-    const existingFurniture = getCurrentRoomFurniture();
-    try {
-      setIsSaving(true);
-      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-        [`houseConfig.rooms.${activeRoom}.furniture`]: [...existingFurniture, newItem]
-      });
-      playSound('pop');
-      triggerSavedFlash();
-    } catch { toast.error('خطأ في إضافة الأثاث'); }
-    finally { setIsSaving(false); }
+    const newFurniture = [...getCurrentRoomFurniture(), newItem];
+    queueSave(hostProfile.uid, { [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture });
+    playSound('pop');
   };
 
-  const handleUpdateItem = async (itemId: string, updates: Partial<HouseItem>) => {
+  const handleUpdateItem = (itemId: string, updates: Partial<HouseItem>) => {
     if (!hostProfile || !isHost) return;
     const newFurniture = getCurrentRoomFurniture().map(i => i.id === itemId ? { ...i, ...updates } : i);
-    if (saveDebounce.current) clearTimeout(saveDebounce.current);
-    saveDebounce.current = setTimeout(async () => {
-      try {
-        setIsSaving(true);
-        await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-          [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture
-        });
-        triggerSavedFlash();
-      } catch { console.error('Update item error'); }
-      finally { setIsSaving(false); }
-    }, 800);
+    queueSave(hostProfile.uid, { [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture });
   };
 
-  const handleRemoveItem = async (itemId: string) => {
+  const handleRemoveItem = (itemId: string) => {
     if (!hostProfile || !isHost) return;
     const newFurniture = getCurrentRoomFurniture().filter(i => i.id !== itemId);
-    try {
-      setIsSaving(true);
-      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-        [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture
-      });
-      playSound('pop');
-      triggerSavedFlash();
-    } catch { toast.error('خطأ في حذف الأثاث'); }
-    finally { setIsSaving(false); }
+    queueSave(hostProfile.uid, { [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture });
+    playSound('pop');
   };
 
-  const handleUpdateWallpaper = async (wallpaperClass: string) => {
+  const handleUpdateWallpaper = (wallpaperClass: string) => {
     if (!hostProfile || !isHost) return;
-    try {
-      setIsSaving(true);
-      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-        [`houseConfig.rooms.${activeRoom}.wallpaper`]: wallpaperClass
-      });
-      playSound('magic');
-      triggerSavedFlash();
-    } catch { toast.error('خطأ في تغيير ورق الحائط'); }
-    finally { setIsSaving(false); }
+    queueSave(hostProfile.uid, { [`houseConfig.rooms.${activeRoom}.wallpaper`]: wallpaperClass });
+    playSound('magic');
   };
 
-  const handleUpdateFloor = async (floorClass: string) => {
+  const handleUpdateFloor = (floorClass: string) => {
     if (!hostProfile || !isHost) return;
-    try {
-      setIsSaving(true);
-      await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
-        [`houseConfig.rooms.${activeRoom}.floor`]: floorClass
-      });
-      playSound('magic');
-      triggerSavedFlash();
-    } catch { toast.error('خطأ في تغيير الأرضية'); }
-    finally { setIsSaving(false); }
+    queueSave(hostProfile.uid, { [`houseConfig.rooms.${activeRoom}.floor`]: floorClass });
+    playSound('magic');
   };
 
   /* ─── WARDROBE HANDLERS ──────────────────────────────────── */
@@ -415,16 +399,16 @@ export default function HeroHouse() {
     try {
       setIsSaving(true);
       await updateDoc(doc(db, 'children_profiles', activeChild.uid), { avatar: previewAvatar });
-      // Update local storage
       const stored = localStorage.getItem('active_child');
       if (stored) {
-        const parsed = JSON.parse(stored);
+        const parsed = JSON.parse(stored) as ChildProfile;
         parsed.avatar = previewAvatar;
         localStorage.setItem('active_child', JSON.stringify(parsed));
       }
       toast.success('تم حفظ المظهر الجديد! ✨');
       playSound('magic');
-      triggerSavedFlash();
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2000);
       setShowWardrobe(false);
     } catch { toast.error('خطأ في حفظ المظهر'); }
     finally { setIsSaving(false); }
@@ -496,21 +480,26 @@ export default function HeroHouse() {
   };
 
   /* ─── MAGIC DECORATE ─────────────────────────────────────── */
+  type MagicFurnitureItem = Pick<HouseItem, 'type' | 'emoji' | 'x' | 'y' | 'scale' | 'rotation'>;
+  type MagicDecorateResult = { wallpaper: string; floor: string; furniture: MagicFurnitureItem[] };
+
   const handleMagicDecorate = async () => {
     if (!hostProfile || !isHost) return;
-    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (window as any).__GEMINI_API_KEY__;
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
     if (!apiKey) { toast.error('مفتاح API غير متوفر'); return; }
     setIsMagicDecorating(true);
     try {
       const ai = new GoogleGenAI({ apiKey });
       const prompt = `You are a magical interior designer for a children's app. The hero is "${hostProfile.heroName || hostProfile.name}". Suggest a fun magical room. Return ONLY JSON: { "wallpaper": "bg-gradient-to-b from-purple-200 to-pink-100", "floor": "bg-amber-100", "furniture": [{ "type": "bed", "emoji": "🛏️", "x": 20, "y": 70, "scale": 2, "rotation": 0 }, { "type": "plant", "emoji": "🪴", "x": 10, "y": 60, "scale": 1, "rotation": 0 }] }`;
       const response = await ai.models.generateContent({ model: 'gemini-2.0-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
-      const result = JSON.parse(response.text || '{}');
-      if (result.wallpaper && result.furniture) {
-        const newFurniture = result.furniture.map((f: any) => ({ ...f, id: Math.random().toString(36).substr(2, 9) }));
+      const result = JSON.parse(response.text ?? '{}') as Partial<MagicDecorateResult>;
+      if (result.wallpaper && Array.isArray(result.furniture)) {
+        const newFurniture: HouseItem[] = result.furniture.map((f) => ({
+          ...f, id: Math.random().toString(36).substr(2, 9)
+        }));
         await updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
           [`houseConfig.rooms.${activeRoom}.wallpaper`]: result.wallpaper,
-          [`houseConfig.rooms.${activeRoom}.floor`]: result.floor || 'bg-amber-100',
+          [`houseConfig.rooms.${activeRoom}.floor`]: result.floor ?? 'bg-amber-100',
           [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture
         });
         toast.success('تم التزيين السحري! ✨'); playSound('magic');
@@ -629,15 +618,29 @@ export default function HeroHouse() {
           </motion.div>
         ))}
 
-        {/* Default hint if empty */}
-        {currentFurniture.length === 0 && !isEditing && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <motion.div animate={{ opacity: [0.4, 0.7, 0.4] }} transition={{ duration: 2, repeat: Infinity }}
-              className="text-center bg-white/30 backdrop-blur-sm rounded-3xl p-8">
-              <div className="text-6xl mb-3">{ROOMS[activeRoom].icon}</div>
-              <p className="font-black text-slate-700">اضغطي على ✏️ لإضافة أثاث!</p>
-            </motion.div>
-          </div>
+        {/* Default furniture items shown when room is empty */}
+        {currentFurniture.length === 0 && (
+          <>
+            {ROOMS[activeRoom].defaultItems.map((emoji, idx) => (
+              <div
+                key={idx}
+                className="absolute text-7xl opacity-60 drop-shadow-xl pointer-events-none select-none"
+                style={{ left: `${20 + idx * 30}%`, bottom: '32%' }}
+              >
+                {emoji}
+              </div>
+            ))}
+            {isHost && !isEditing && (
+              <motion.div
+                animate={{ opacity: [0.5, 0.9, 0.5] }} transition={{ duration: 2, repeat: Infinity }}
+                className="absolute bottom-[54%] left-1/2 -translate-x-1/2 pointer-events-none"
+              >
+                <div className="bg-white/70 backdrop-blur-sm text-slate-600 font-black text-sm px-4 py-2 rounded-full shadow">
+                  اضغطي على ✏️ لتخصيص الغرفة!
+                </div>
+              </motion.div>
+            )}
+          </>
         )}
 
         {/* Characters */}
