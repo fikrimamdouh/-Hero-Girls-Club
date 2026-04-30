@@ -69,9 +69,15 @@ Set these as secrets in the Replit environment:
 - **Action bar**: 10 fun social actions (tea, music, dance, heart, etc.)
 - **Chat widget**: real-time chat for visit sessions
 - **Tic-tac-toe** game for social visits
+- **📺 TV (YouTube embed)**: Click any 📺 furniture item to open the magic TV panel; host sets a YouTube URL, visitors watch the video
+- **🎵 Background music**: Host sets a YouTube URL for background music; music toggle button (🔊/🔇) appears for all visitors
+- **Auto-house at registration**: `houseConfig` is created at signup in LandingPage + ParentDashboard so every user has a house from day one
+- **Auto-initialize existing users**: HeroHouse detects missing `houseConfig` and silently writes defaults on first visit
 - **Data model**:
   - Room data (furniture, wallpaper, floor) saved to `children_profiles/{hostUid}.houseConfig.rooms.{roomId}.*`
   - Avatar/wardrobe data saved to `children_profiles/{activeChildUid}.avatar`
+  - `houseConfig.tvUrl` — YouTube URL/ID for the in-room TV
+  - `houseConfig.bgMusic` — YouTube URL/ID for background ambient music
   - Note: legacy `houseConfig.{furniture,theme,wallpaper,floor}` fields are preserved for backward compat; new code reads exclusively from `houseConfig.rooms.*`
   - Profiles without `houseConfig.rooms` fall back to room-specific CSS defaults automatically
 

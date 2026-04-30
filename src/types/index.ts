@@ -33,6 +33,8 @@ export interface HouseConfig {
   floor: string;
   currentRoom?: 'bedroom' | 'living' | 'garden' | 'kitchen';
   rooms?: Partial<Record<'bedroom' | 'living' | 'garden' | 'kitchen', RoomConfig>>;
+  bgMusic?: string;
+  tvUrl?: string;
 }
 
 export interface ChildProfile {

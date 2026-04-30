@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Send, LogOut, Camera, Palette, Wand2, Plus, Trash2, Gamepad2,
-  X, Minus, RotateCw, Shirt, Save, Check, MessageCircle
+  X, Minus, RotateCw, Shirt, Save, Check, MessageCircle, Tv2, Music2, VolumeX, Volume2
 } from 'lucide-react';
 import { db } from '../firebase';
 import {
@@ -218,6 +218,13 @@ export default function HeroHouse() {
   const [isSaving, setIsSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
 
+  /* — TV & music — */
+  const [showTvPanel, setShowTvPanel] = useState(false);
+  const [tvUrlInput, setTvUrlInput] = useState('');
+  const [musicUrlInput, setMusicUrlInput] = useState('');
+  const [musicPlaying, setMusicPlaying] = useState(false);
+  const [showMusicSetup, setShowMusicSetup] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingSave = useRef<Record<string, unknown>>({});
   const saveTimer = useRef<NodeJS.Timeout | null>(null);
@@ -246,6 +253,33 @@ export default function HeroHouse() {
       }
     }, 2000);
   };
+
+  /* ─── YouTube video-ID helper ────────────────────────────── */
+  const extractYoutubeId = (url: string): string | null => {
+    if (!url) return null;
+    const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&?/\s]+)/);
+    if (m) return m[1];
+    if (/^[a-zA-Z0-9_-]{11}$/.test(url.trim())) return url.trim();
+    return null;
+  };
+
+  /* ─── AUTO-INITIALIZE houseConfig for existing users ─────── */
+  /* (uses activeChild + hostProfile to avoid TDZ with isHost) */
+  useEffect(() => {
+    if (!hostProfile || hostProfile.houseConfig) return;
+    const hostIsCurrentUser = activeChild?.uid === hostProfile?.uid;
+    if (!hostIsCurrentUser) return;
+    updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
+      houseConfig: {
+        theme: 'castle',
+        furniture: [],
+        decorations: [],
+        wallpaper: 'bg-gradient-to-b from-pink-100 to-rose-200',
+        floor: 'bg-rose-100',
+        rooms: {}
+      }
+    }).catch(() => {});
+  }, [hostProfile, activeChild]);
 
   /* ─── LOAD DATA ─────────────────────────────────────────── */
   useEffect(() => {
@@ -625,7 +659,14 @@ export default function HeroHouse() {
             }}
             animate={{ x: 0, y: 0 }} transition={{ duration: 0 }}
             style={{ left: `${item.x}%`, top: `${item.y}%` }}
-            onClick={() => { if (!isEditing && item.type === 'mirror') handleAction('mirror'); }}
+            onClick={() => {
+              if (isEditing) return;
+              if (item.type === 'mirror') handleAction('mirror');
+              if (item.type === 'tv') {
+                setTvUrlInput(hostProfile?.houseConfig?.tvUrl || '');
+                setShowTvPanel(true);
+              }
+            }}
             className={`absolute text-6xl md:text-7xl ${isEditing ? 'cursor-grab active:cursor-grabbing z-50' : 'z-20'} group select-none`}
           >
             <div className="relative flex items-center justify-center">
@@ -751,6 +792,27 @@ export default function HeroHouse() {
                 <Wand2 className="w-5 h-5" />
               </button>
             )}
+            {/* Music toggle: visible to all, setup is host-only */}
+            {(() => {
+              const hasBgMusic = !!extractYoutubeId(hostProfile?.houseConfig?.bgMusic || '');
+              return (
+                <div className="flex gap-1">
+                  {hasBgMusic && (
+                    <button onClick={() => setMusicPlaying(p => !p)}
+                      className={`w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all ${musicPlaying ? 'bg-purple-500 text-white' : 'bg-white/90 text-purple-500'}`}
+                      title={musicPlaying ? 'كتم الموسيقى' : 'تشغيل الموسيقى'}>
+                      {musicPlaying ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+                    </button>
+                  )}
+                  {isHost && (
+                    <button onClick={() => { setMusicUrlInput(hostProfile?.houseConfig?.bgMusic || ''); setShowMusicSetup(true); }}
+                      className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-purple-500 hover:bg-purple-50 shadow-xl border-3 border-white">
+                      <Music2 className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl shadow-lg border-2 border-pink-100 flex items-center gap-3">
@@ -1088,6 +1150,138 @@ export default function HeroHouse() {
           </div>
         </div>
       )}
+
+      {/* ── TV PANEL (YouTube embed) ── */}
+      <AnimatePresence>
+        {showTvPanel && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4"
+            onClick={() => setShowTvPanel(false)}>
+            <motion.div initial={{ scale: 0.85, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.85, y: 30 }}
+              onClick={e => e.stopPropagation()}
+              className="bg-white rounded-[2rem] shadow-2xl border-4 border-pink-100 w-full max-w-lg p-5 flex flex-col gap-4" dir="rtl">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-black text-pink-600 flex items-center gap-2">
+                  <Tv2 className="w-5 h-5" /> التلفاز السحري
+                </h2>
+                <button onClick={() => setShowTvPanel(false)} className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-full text-slate-500"><X className="w-4 h-4" /></button>
+              </div>
+
+              {/* Video player */}
+              {(() => {
+                const videoId = extractYoutubeId(hostProfile?.houseConfig?.tvUrl || '');
+                return videoId ? (
+                  <div className="relative w-full rounded-xl overflow-hidden shadow-lg" style={{ paddingBottom: '56.25%' }}>
+                    <iframe
+                      className="absolute inset-0 w-full h-full"
+                      src={`https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-40 bg-slate-50 rounded-xl text-slate-400 font-bold text-sm">
+                    📺 لم يتم تحديد فيديو بعد
+                  </div>
+                );
+              })()}
+
+              {/* Host can update the TV URL */}
+              {isHost && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-black text-slate-500">رابط YouTube للتلفاز</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={tvUrlInput}
+                      onChange={e => setTvUrlInput(e.target.value)}
+                      placeholder="https://youtube.com/watch?v=... أو معرف الفيديو"
+                      className="flex-1 border-2 border-slate-200 rounded-xl px-3 py-2 text-sm text-right focus:border-pink-400 outline-none"
+                    />
+                    <motion.button
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => {
+                        if (!hostProfile) return;
+                        const id = extractYoutubeId(tvUrlInput.trim());
+                        if (!id && tvUrlInput.trim()) { toast.error('الرابط غير صحيح'); return; }
+                        const url = id ? tvUrlInput.trim() : '';
+                        queueSave(hostProfile.uid, { 'houseConfig.tvUrl': url });
+                        toast.success(id ? 'تم تحديث التلفاز! 📺' : 'تم مسح التلفاز');
+                        setShowTvPanel(false);
+                      }}
+                      className="bg-pink-500 hover:bg-pink-600 text-white font-black text-xs px-4 py-2 rounded-xl">
+                      حفظ
+                    </motion.button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── MUSIC SETUP PANEL (host only) ── */}
+      <AnimatePresence>
+        {showMusicSetup && isHost && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4"
+            onClick={() => setShowMusicSetup(false)}>
+            <motion.div initial={{ scale: 0.85, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.85, y: 30 }}
+              onClick={e => e.stopPropagation()}
+              className="bg-white rounded-[2rem] shadow-2xl border-4 border-purple-100 w-full max-w-md p-5 flex flex-col gap-4" dir="rtl">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-black text-purple-600 flex items-center gap-2">
+                  <Music2 className="w-5 h-5" /> موسيقى البيت
+                </h2>
+                <button onClick={() => setShowMusicSetup(false)} className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-full"><X className="w-4 h-4" /></button>
+              </div>
+              <p className="text-xs text-slate-500">اختاري رابط YouTube لتشغيل الموسيقى في الخلفية لكل زوّار البيت</p>
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-black text-slate-500">رابط YouTube للموسيقى</label>
+                <div className="flex gap-2">
+                  <input
+                    value={musicUrlInput}
+                    onChange={e => setMusicUrlInput(e.target.value)}
+                    placeholder="https://youtube.com/watch?v=..."
+                    className="flex-1 border-2 border-slate-200 rounded-xl px-3 py-2 text-sm text-right focus:border-purple-400 outline-none"
+                  />
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      if (!hostProfile) return;
+                      const id = extractYoutubeId(musicUrlInput.trim());
+                      if (!id && musicUrlInput.trim()) { toast.error('الرابط غير صحيح'); return; }
+                      const url = id ? musicUrlInput.trim() : '';
+                      queueSave(hostProfile.uid, { 'houseConfig.bgMusic': url });
+                      toast.success(id ? 'تم تحديث موسيقى البيت! 🎵' : 'تم إيقاف الموسيقى');
+                      setShowMusicSetup(false);
+                    }}
+                    className="bg-purple-500 hover:bg-purple-600 text-white font-black text-xs px-4 py-2 rounded-xl">
+                    حفظ
+                  </motion.button>
+                </div>
+              </div>
+              {hostProfile?.houseConfig?.bgMusic && (
+                <div className="flex items-center gap-2 bg-purple-50 rounded-xl px-3 py-2 text-xs text-purple-600 font-bold">
+                  <Music2 className="w-3.5 h-3.5" /> موسيقى حالية: {hostProfile.houseConfig.bgMusic.slice(0, 40)}...
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── BACKGROUND MUSIC PLAYER (hidden YouTube iframe) ── */}
+      {(() => {
+        const musicId = extractYoutubeId(hostProfile?.houseConfig?.bgMusic || '');
+        return musicId && musicPlaying ? (
+          <iframe
+            className="sr-only"
+            src={`https://www.youtube.com/embed/${musicId}?autoplay=1&loop=1&playlist=${musicId}&controls=0`}
+            allow="autoplay"
+            title="موسيقى البيت"
+          />
+        ) : null;
+      })()}
 
     </div>
   );

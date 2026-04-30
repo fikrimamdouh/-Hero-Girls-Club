@@ -181,7 +181,15 @@ export default function ParentDashboard() {
           accessory: '👑'
         },
         status: 'approved',
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        houseConfig: {
+          theme: 'castle',
+          furniture: [],
+          decorations: [],
+          wallpaper: 'bg-gradient-to-b from-pink-100 to-rose-200',
+          floor: 'bg-rose-100',
+          rooms: {}
+        }
       };
 
       await setDoc(doc(db, 'children_profiles', childId), childProfile);

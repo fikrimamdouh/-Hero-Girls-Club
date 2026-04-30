@@ -161,7 +161,15 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
           accessory: '👑'
         },
         status: 'pending',
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        houseConfig: {
+          theme: 'castle',
+          furniture: [],
+          decorations: [],
+          wallpaper: 'bg-gradient-to-b from-pink-100 to-rose-200',
+          floor: 'bg-rose-100',
+          rooms: {}
+        }
       };
 
       try {
