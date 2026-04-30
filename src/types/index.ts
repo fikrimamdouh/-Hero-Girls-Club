@@ -16,6 +16,7 @@ export interface HouseItem {
   y: number;
   scale: number;
   rotation: number;
+    room?: 'sleep' | 'play' | 'study';
 }
 
 export interface HouseConfig {
