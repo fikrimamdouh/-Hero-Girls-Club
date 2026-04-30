@@ -64,7 +64,7 @@ Set these as secrets in the Replit environment:
 - **8 wallpaper + 8 floor** options per room, saved per room in Firestore
 - **Wardrobe panel**: 4 tabs (dresses 10, hair 8, accessories 8, skin colors 6), live avatar preview, save to Firestore
 - **Drag & resize furniture**: drag to position, scale up/down, rotate, delete with hover controls
-- **Debounced auto-save**: 800ms debounce on drag, instant save flash indicator
+- **Debounced auto-save**: 2000ms (2s) debounce coalesces rapid furniture changes into one Firestore write; "✅ تم الحفظ" flash indicator on commit
 - **Magic Decorate**: AI-powered room decoration using Gemini API
 - **Action bar**: 10 fun social actions (tea, music, dance, heart, etc.)
 - **Chat widget**: real-time chat for visit sessions

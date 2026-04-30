@@ -210,6 +210,8 @@ export default function HeroHouse() {
 
   /* — room system — */
   const [activeRoom, setActiveRoom] = useState<RoomId>('bedroom');
+  /* optimistic local furniture state per room — avoids stale Firestore reads during rapid edits */
+  const [localRoomFurniture, setLocalRoomFurniture] = useState<Partial<Record<RoomId, HouseItem[]>>>({});
 
   /* — wardrobe preview — */
   const [previewAvatar, setPreviewAvatar] = useState<AvatarConfig | null>(null);
@@ -226,13 +228,18 @@ export default function HeroHouse() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setIsSaving(true);
     saveTimer.current = setTimeout(async () => {
+      const snapshot = { ...pendingSave.current };
+      pendingSave.current = {};
       try {
-        await updateDoc(doc(db, 'children_profiles', hostUid), pendingSave.current);
-        pendingSave.current = {};
+        await updateDoc(doc(db, 'children_profiles', hostUid), snapshot);
+        /* clear local optimistic furniture state — Firestore will provide canonical state via onSnapshot */
+        setLocalRoomFurniture({});
         setSavedFlash(true);
         setTimeout(() => setSavedFlash(false), 2000);
       } catch (err) {
         console.error('Auto-save error:', err);
+        /* restore pending fields so next save attempt includes them */
+        pendingSave.current = { ...snapshot, ...pendingSave.current };
         toast.error('تعذّر الحفظ، سيتم إعادة المحاولة');
       } finally {
         setIsSaving(false);
@@ -338,7 +345,8 @@ export default function HeroHouse() {
   };
 
   const getCurrentRoomFurniture = (): HouseItem[] => {
-    return getCurrentRoomConfig()?.furniture ?? [];
+    /* local optimistic state takes priority; falls back to Firestore-derived state */
+    return localRoomFurniture[activeRoom] ?? getCurrentRoomConfig()?.furniture ?? [];
   };
 
   const getCurrentWallpaper = (): string => {
@@ -350,6 +358,10 @@ export default function HeroHouse() {
   };
 
   /* ─── FURNITURE HANDLERS (all via queueSave) ─────────────── */
+  const updateLocalFurniture = (room: RoomId, furniture: HouseItem[]) => {
+    setLocalRoomFurniture(prev => ({ ...prev, [room]: furniture }));
+  };
+
   const handleAddItem = (item: Partial<HouseItem>) => {
     if (!hostProfile || !isHost) return;
     const newItem: HouseItem = {
@@ -359,6 +371,7 @@ export default function HeroHouse() {
       scale: 1.2, rotation: 0
     };
     const newFurniture = [...getCurrentRoomFurniture(), newItem];
+    updateLocalFurniture(activeRoom, newFurniture);
     queueSave(hostProfile.uid, { [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture });
     playSound('pop');
   };
@@ -366,12 +379,14 @@ export default function HeroHouse() {
   const handleUpdateItem = (itemId: string, updates: Partial<HouseItem>) => {
     if (!hostProfile || !isHost) return;
     const newFurniture = getCurrentRoomFurniture().map(i => i.id === itemId ? { ...i, ...updates } : i);
+    updateLocalFurniture(activeRoom, newFurniture);
     queueSave(hostProfile.uid, { [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture });
   };
 
   const handleRemoveItem = (itemId: string) => {
     if (!hostProfile || !isHost) return;
     const newFurniture = getCurrentRoomFurniture().filter(i => i.id !== itemId);
+    updateLocalFurniture(activeRoom, newFurniture);
     queueSave(hostProfile.uid, { [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture });
     playSound('pop');
   };
@@ -826,6 +841,38 @@ export default function HeroHouse() {
                   ))}
                 </div>
               </div>
+            </div>
+
+            {/* حفظ التصميم button */}
+            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-[10px] text-slate-400 font-bold">
+                {isSaving ? '⏳ جارٍ الحفظ...' : savedFlash ? '✅ تم الحفظ' : 'التغييرات تُحفظ تلقائياً بعد 2 ثانية'}
+              </span>
+              <motion.button
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                onClick={async () => {
+                  if (!hostProfile || Object.keys(pendingSave.current).length === 0) {
+                    toast.success('التصميم محفوظ بالفعل ✅');
+                    return;
+                  }
+                  if (saveTimer.current) clearTimeout(saveTimer.current);
+                  const snapshot = { ...pendingSave.current };
+                  pendingSave.current = {};
+                  setIsSaving(true);
+                  try {
+                    await updateDoc(doc(db, 'children_profiles', hostProfile.uid), snapshot);
+                    setLocalRoomFurniture({});
+                    setSavedFlash(true);
+                    setTimeout(() => setSavedFlash(false), 2000);
+                    toast.success('تم حفظ تصميم البيت! 🏠✨');
+                  } catch { toast.error('خطأ في الحفظ'); }
+                  finally { setIsSaving(false); }
+                }}
+                className="flex items-center gap-2 bg-fuchsia-500 hover:bg-fuchsia-600 text-white font-black text-xs px-4 py-2 rounded-xl shadow-md"
+              >
+                <Save className="w-3.5 h-3.5" />
+                حفظ التصميم
+              </motion.button>
             </div>
           </motion.div>
         )}
