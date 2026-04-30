@@ -67,10 +67,13 @@ Set these as secrets in the Replit environment:
 - **Debounced auto-save**: 2000ms (2s) debounce coalesces rapid furniture changes into one Firestore write; "✅ تم الحفظ" flash indicator on commit
 - **Magic Decorate**: AI-powered room decoration using Gemini API
 - **Action bar**: 10 fun social actions (tea, music, dance, heart, etc.)
-- **Chat widget**: real-time chat for visit sessions
+- **Group chat widget** (`house_chat` Firestore collection): real-time shared chat for ALL visitors in the same house (replaces per-visit chat). Shows visitor count badge and avatar strip
 - **Tic-tac-toe** game for social visits
 - **📺 TV (YouTube embed)**: Click any 📺 furniture item to open the magic TV panel; host sets a YouTube URL, visitors watch the video
 - **🎵 Background music**: Host sets a YouTube URL for background music; music toggle button (🔊/🔇) appears for all visitors
+- **Group visitor avatars**: All active visitors shown as character dolls in the room simultaneously
+- **🎥 Jitsi group video/audio call**: Host clicks Video button → `house_sessions.callActive = true` → Jitsi iframe embeds at `meet.jit.si/NadiBatlat-{hostUid}`; all visitors see pulsing join button; host ends call for everyone
+- **👥 Multi-invite panel**: Host selects multiple friends from their friends list and sends parallel visit_requests to all selected friends at once
 - **Auto-house at registration**: `houseConfig` is created at signup in LandingPage + ParentDashboard so every user has a house from day one
 - **Auto-initialize existing users**: HeroHouse detects missing `houseConfig` and silently writes defaults on first visit
 - **Data model**:
@@ -78,8 +81,18 @@ Set these as secrets in the Replit environment:
   - Avatar/wardrobe data saved to `children_profiles/{activeChildUid}.avatar`
   - `houseConfig.tvUrl` — YouTube URL/ID for the in-room TV
   - `houseConfig.bgMusic` — YouTube URL/ID for background ambient music
+  - `house_sessions/{hostUid}` — live session: hostUid, hostHeroName, hostAvatar, `visitors: Record<uid, HouseVisitor>`, `callActive: boolean`, `updatedAt`
+  - `house_chat/{auto}` — group chat: houseId, senderId, senderHeroName, senderAvatar, text, timestamp
   - Note: legacy `houseConfig.{furniture,theme,wallpaper,floor}` fields are preserved for backward compat; new code reads exclusively from `houseConfig.rooms.*`
   - Profiles without `houseConfig.rooms` fall back to room-specific CSS defaults automatically
+
+## مدينة البطلات — City View (VillageView.tsx)
+
+- Real-time grid of all approved children's houses
+- Loads `children_profiles` + `house_sessions` for live visitor counts and call indicators
+- Online badges (via `online_status` collection)
+- Click any house → navigate to `/house/view_{uid}` to visit
+- Own house banner shows visitor count + avatar chips when guests are present
 
 ## Replit Migration Notes
 

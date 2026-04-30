@@ -202,6 +202,34 @@ export interface OnlineStatus {
   isOnline: boolean;
 }
 
+export interface HouseVisitor {
+  uid: string;
+  heroName: string;
+  name: string;
+  avatar: AvatarConfig;
+  joinedAt: number;
+}
+
+export interface HouseSession {
+  hostUid: string;
+  hostHeroName: string;
+  hostName: string;
+  hostAvatar: AvatarConfig;
+  visitors: Record<string, HouseVisitor>;
+  callActive: boolean;
+  updatedAt: number;
+}
+
+export interface HouseMessage {
+  id?: string;
+  houseId: string;
+  senderId: string;
+  senderHeroName: string;
+  senderAvatar: AvatarConfig;
+  text: string;
+  timestamp: number;
+}
+
 export interface VisitRequest {
   id: string;
   fromId: string;

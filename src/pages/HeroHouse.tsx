@@ -3,14 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Send, LogOut, Camera, Palette, Wand2, Plus, Trash2, Gamepad2,
-  X, Minus, RotateCw, Shirt, Save, Check, MessageCircle, Tv2, Music2, VolumeX, Volume2
+  X, Minus, RotateCw, Shirt, Save, Check, MessageCircle, Tv2, Music2, VolumeX, Volume2,
+  Video, VideoOff, UserPlus, Users, PhoneOff
 } from 'lucide-react';
 import { db } from '../firebase';
 import {
   doc, onSnapshot, collection, addDoc, query, where, orderBy,
-  updateDoc, getDoc
+  updateDoc, getDoc, setDoc, deleteField, getDocs
 } from 'firebase/firestore';
-import { ChildProfile, VisitRequest, ChatMessage, AvatarConfig, HouseItem, RoomConfig } from '../types';
+import { ChildProfile, VisitRequest, AvatarConfig, HouseItem, RoomConfig, HouseSession, HouseMessage, HouseVisitor, FriendRequest } from '../types';
 import { toast } from 'sonner';
 import { GoogleGenAI } from '@google/genai';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
@@ -193,7 +194,6 @@ export default function HeroHouse() {
 
   /* — core state — */
   const [visit, setVisit] = useState<VisitRequest | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [activeChild, setActiveChild] = useState<ChildProfile | null>(null);
   const [hostProfile, setHostProfile] = useState<ChildProfile | null>(null);
@@ -224,6 +224,15 @@ export default function HeroHouse() {
   const [musicUrlInput, setMusicUrlInput] = useState('');
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [showMusicSetup, setShowMusicSetup] = useState(false);
+
+  /* — Group visit — */
+  const [houseSession, setHouseSession] = useState<HouseSession | null>(null);
+  const [houseMessages, setHouseMessages] = useState<HouseMessage[]>([]);
+  const [showCall, setShowCall] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [friends, setFriends] = useState<ChildProfile[]>([]);
+  const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
+  const [inviteSending, setInviteSending] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingSave = useRef<Record<string, unknown>>({});
@@ -280,6 +289,93 @@ export default function HeroHouse() {
       }
     }).catch(() => {});
   }, [hostProfile, activeChild]);
+
+  /* Auto-close Jitsi when host ends call */
+  useEffect(() => {
+    if (!houseSession?.callActive) setShowCall(false);
+  }, [houseSession?.callActive]);
+
+  /* ─── GROUP VISIT: join/leave house_session + group chat ─── */
+  useEffect(() => {
+    if (!hostProfile || !activeChild) return;
+    const hostUid = hostProfile.uid;
+    const isCurrentHost = activeChild.uid === hostUid;
+    const sessionRef = doc(db, 'house_sessions', hostUid);
+
+    /* Initialize or update session */
+    if (isCurrentHost) {
+      setDoc(sessionRef, {
+        hostUid, hostHeroName: hostProfile.heroName || hostProfile.name,
+        hostName: hostProfile.name, hostAvatar: hostProfile.avatar,
+        visitors: {}, callActive: false, updatedAt: Date.now()
+      }, { merge: true }).catch(() => {});
+    } else {
+      const visitor: HouseVisitor = {
+        uid: activeChild.uid, heroName: activeChild.heroName || activeChild.name,
+        name: activeChild.name, avatar: activeChild.avatar, joinedAt: Date.now()
+      };
+      updateDoc(sessionRef, {
+        [`visitors.${activeChild.uid}`]: visitor, updatedAt: Date.now()
+      }).catch(() =>
+        setDoc(sessionRef, {
+          hostUid, hostHeroName: hostProfile.heroName || hostProfile.name,
+          hostName: hostProfile.name, hostAvatar: hostProfile.avatar,
+          visitors: { [activeChild.uid]: visitor },
+          callActive: false, updatedAt: Date.now()
+        }, { merge: true }).catch(() => {})
+      );
+    }
+
+    /* Subscribe to house session */
+    const unsubSession = onSnapshot(sessionRef, snap => {
+      if (snap.exists()) setHouseSession(snap.data() as HouseSession);
+    }, () => {});
+
+    /* Subscribe to house_chat */
+    const chatQ = query(
+      collection(db, 'house_chat'),
+      where('houseId', '==', hostUid),
+      orderBy('timestamp', 'asc')
+    );
+    const unsubChat = onSnapshot(chatQ, snap => {
+      setHouseMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as HouseMessage)));
+      setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    }, () => {});
+
+    /* Load friends list for invite panel */
+    if (isCurrentHost) {
+      getDocs(query(collection(db, 'friend_requests'),
+        where('status', '==', 'accepted')
+      )).then(snap => {
+        const friendUids = new Set<string>();
+        snap.docs.forEach(d => {
+          const fr = d.data() as FriendRequest;
+          if (fr.fromId === activeChild.uid) friendUids.add(fr.toId);
+          if (fr.toId === activeChild.uid) friendUids.add(fr.fromId);
+        });
+        if (friendUids.size > 0) {
+          getDocs(query(collection(db, 'children_profiles'),
+            where('status', '==', 'approved')
+          )).then(cSnap => {
+            setFriends(cSnap.docs
+              .map(d => d.data() as ChildProfile)
+              .filter(c => friendUids.has(c.uid)));
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
+    return () => {
+      unsubSession();
+      unsubChat();
+      /* Remove visitor on unmount */
+      if (!isCurrentHost) {
+        updateDoc(sessionRef, {
+          [`visitors.${activeChild.uid}`]: deleteField(), updatedAt: Date.now()
+        }).catch(() => {});
+      }
+    };
+  }, [hostProfile?.uid, activeChild?.uid]);
 
   /* ─── LOAD DATA ─────────────────────────────────────────── */
   useEffect(() => {
@@ -347,17 +443,7 @@ export default function HeroHouse() {
       setLoading(false);
     }, (err) => handleFirestoreError(err, OperationType.GET, `visit_requests/${visitId}`));
 
-    const q = query(
-      collection(db, 'chat_messages'),
-      where('visitId', '==', visitId),
-      orderBy('timestamp', 'asc')
-    );
-    const unsubChat = onSnapshot(q, (snap) => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage)));
-      setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'chat_messages'));
-
-    return () => { unsubVisit(); unsubChat(); unsubHost?.(); };
+    return () => { unsubVisit(); unsubHost?.(); };
   }, [visitId, navigate]);
 
   const isLocalVisitMode = visitId === 'self' || !!visitId?.startsWith('view_');
@@ -568,15 +654,56 @@ export default function HeroHouse() {
   /* ─── CHAT ───────────────────────────────────────────────── */
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !activeChild || !visitId) return;
+    if (!newMessage.trim() || !activeChild || !hostProfile) return;
+    const msg: Omit<HouseMessage, 'id'> = {
+      houseId: hostProfile.uid,
+      senderId: activeChild.uid,
+      senderHeroName: activeChild.heroName || activeChild.name,
+      senderAvatar: activeChild.avatar,
+      text: newMessage.trim(),
+      timestamp: Date.now()
+    };
     try {
-      await addDoc(collection(db, 'chat_messages'), {
-        visitId, senderId: activeChild.uid,
-        senderName: activeChild.heroName || activeChild.name,
-        text: newMessage, timestamp: Date.now()
-      });
+      await addDoc(collection(db, 'house_chat'), msg);
       setNewMessage(''); playSound('pop');
     } catch { toast.error('خطأ في إرسال الرسالة'); }
+  };
+
+  /* ─── JITSI CALL ────────────────────────────────────────── */
+  const handleToggleCall = async () => {
+    if (!hostProfile || !isHost) return;
+    const newState = !houseSession?.callActive;
+    await updateDoc(doc(db, 'house_sessions', hostProfile.uid), {
+      callActive: newState, updatedAt: Date.now()
+    }).catch(() => {});
+    toast.success(newState ? 'تم تشغيل مكالمة الفيديو! 📹' : 'تم إنهاء المكالمة');
+  };
+
+  /* ─── MULTI-INVITE ──────────────────────────────────────── */
+  const handleSendInvites = async () => {
+    if (!activeChild || selectedFriends.size === 0) return;
+    setInviteSending(true);
+    let sent = 0;
+    for (const uid of selectedFriends) {
+      const friend = friends.find(f => f.uid === uid);
+      if (!friend) continue;
+      try {
+        const reqRef = await addDoc(collection(db, 'visit_requests'), {
+          fromId: activeChild.uid, fromName: activeChild.name,
+          fromHeroName: activeChild.heroName || activeChild.name, fromAvatar: activeChild.avatar,
+          toId: activeChild.uid, toName: activeChild.heroName || activeChild.name,
+          toAvatar: activeChild.avatar,
+          status: 'pending', timestamp: Date.now(), inviteToHouse: true,
+          hostUid: activeChild.uid
+        });
+        await updateDoc(reqRef, { id: reqRef.id });
+        sent++;
+      } catch { /* continue */ }
+    }
+    setInviteSending(false);
+    setSelectedFriends(new Set());
+    setShowInvite(false);
+    toast.success(`تم إرسال ${sent} دعوة! ✨`);
   };
 
   /* ─── END VISIT ──────────────────────────────────────────── */
@@ -710,25 +837,33 @@ export default function HeroHouse() {
           </>
         )}
 
-        {/* Characters */}
-        <div className="absolute bottom-[30%] w-full flex justify-center gap-16 md:gap-40 z-30 pointer-events-none">
-          {hostAvatar && (
-            <div className="flex flex-col items-center">
-              <Doll avatar={hostAvatar} isDancing={visit.currentAction?.type === 'dance'} size="lg" />
-              <span className="mt-2 bg-white/80 backdrop-blur-sm text-pink-600 font-black text-xs px-3 py-1 rounded-full">
-                {hostProfile?.heroName || hostProfile?.name}
-              </span>
+        {/* Characters — host + all group visitors */}
+        {(() => {
+          const groupVisitors = Object.values(houseSession?.visitors ?? {});
+          const isDancing = visit.currentAction?.type === 'dance';
+          const allChars: Array<{ uid: string; avatar: AvatarConfig; label: string; isHost: boolean }> = [];
+          if (hostAvatar) allChars.push({ uid: hostProfile!.uid, avatar: hostAvatar, label: hostProfile?.heroName || hostProfile?.name || '', isHost: true });
+          if (groupVisitors.length > 0) {
+            groupVisitors.forEach(v => allChars.push({ uid: v.uid, avatar: v.avatar, label: v.heroName, isHost: false }));
+          } else if (visitorAvatar) {
+            allChars.push({ uid: 'visitor', avatar: visitorAvatar, label: visit.fromHeroName || '', isHost: false });
+          }
+          const total = allChars.length;
+          return (
+            <div className="absolute bottom-[28%] w-full flex justify-center gap-6 md:gap-12 z-30 pointer-events-none"
+              style={{ flexWrap: total > 4 ? 'wrap' : 'nowrap' }}>
+              {allChars.map(char => (
+                <motion.div key={char.uid} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                  className="flex flex-col items-center">
+                  <Doll avatar={char.avatar} isDancing={isDancing} size={total > 4 ? 'sm' : 'lg'} />
+                  <span className={`mt-1 backdrop-blur-sm font-black text-xs px-3 py-1 rounded-full ${char.isHost ? 'bg-fuchsia-600/80 text-white' : 'bg-white/80 text-sky-600'}`}>
+                    {char.label}
+                  </span>
+                </motion.div>
+              ))}
             </div>
-          )}
-          {visitorAvatar && (
-            <div className="flex flex-col items-center">
-              <Doll avatar={visitorAvatar} isDancing={visit.currentAction?.type === 'dance'} size="lg" />
-              <span className="mt-2 bg-white/80 backdrop-blur-sm text-sky-600 font-black text-xs px-3 py-1 rounded-full">
-                {visit.fromHeroName}
-              </span>
-            </div>
-          )}
-        </div>
+          );
+        })()}
       </div>
 
       {/* ── ACTION ANIMATIONS ── */}
@@ -786,6 +921,30 @@ export default function HeroHouse() {
                 <Shirt className="w-5 h-5" />
               </button>
             )}
+            {/* Call button: host starts, all join */}
+            {isHost ? (
+              <button onClick={handleToggleCall}
+                title={houseSession?.callActive ? 'إنهاء المكالمة' : 'ابدئي مكالمة فيديو'}
+                className={`w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all ${houseSession?.callActive ? 'bg-red-500 text-white' : 'bg-white/90 text-emerald-500 hover:bg-emerald-50'}`}>
+                {houseSession?.callActive ? <PhoneOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+              </button>
+            ) : houseSession?.callActive ? (
+              <button onClick={() => setShowCall(c => !c)}
+                title="انضمي للمكالمة"
+                className={`w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all animate-pulse ${showCall ? 'bg-emerald-500 text-white' : 'bg-white/90 text-emerald-500'}`}>
+                <Video className="w-5 h-5" />
+              </button>
+            ) : null}
+
+            {/* Invite friends button (host only) */}
+            {isHost && (
+              <button onClick={() => setShowInvite(i => !i)}
+                title="ادعي صديقات"
+                className={`w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all ${showInvite ? 'bg-sky-500 text-white' : 'bg-white/90 text-sky-500 hover:bg-sky-50'}`}>
+                <UserPlus className="w-5 h-5" />
+              </button>
+            )}
+
             {isHost && (
               <button onClick={handleMagicDecorate}
                 className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-amber-500 hover:bg-amber-50 shadow-xl border-3 border-white">
@@ -1052,42 +1211,142 @@ export default function HeroHouse() {
         )}
       </AnimatePresence>
 
-      {/* ── CHAT WIDGET ── */}
-      {visitId !== 'self' && (
-        <div className="absolute bottom-4 left-4 z-50 w-72 pointer-events-auto">
-          <AnimatePresence>
-            {showChat && (
-              <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                className="bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-white overflow-hidden flex flex-col mb-3" style={{ height: '340px' }}>
-                <div className="bg-sky-100 p-3 flex justify-between items-center border-b-2 border-white">
-                  <h3 className="font-black text-sky-600 flex items-center gap-2 text-sm"><MessageCircle className="w-4 h-4" /> الدردشة</h3>
-                  <button onClick={() => setShowChat(false)} className="text-sky-400 hover:text-sky-600"><X className="w-4 h-4" /></button>
+      {/* ── GROUP CHAT WIDGET ── */}
+      <div className="absolute bottom-4 left-4 z-50 w-72 pointer-events-auto">
+        <AnimatePresence>
+          {showChat && (
+            <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.9 }}
+              className="bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-white overflow-hidden flex flex-col mb-3" style={{ height: '360px' }}>
+              {/* header: visitor count */}
+              <div className="bg-gradient-to-l from-sky-100 to-fuchsia-100 p-3 flex justify-between items-center border-b-2 border-white">
+                <h3 className="font-black text-sky-700 flex items-center gap-2 text-sm">
+                  <MessageCircle className="w-4 h-4" /> دردشة البيت
+                  <span className="bg-fuchsia-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black">
+                    {1 + Object.values(houseSession?.visitors ?? {}).length} 👧
+                  </span>
+                </h3>
+                <button onClick={() => setShowChat(false)} className="text-sky-400 hover:text-sky-600"><X className="w-4 h-4" /></button>
+              </div>
+              {/* visitor avatars strip */}
+              {Object.values(houseSession?.visitors ?? {}).length > 0 && (
+                <div className="flex gap-1 px-3 py-1.5 bg-sky-50/60 border-b border-sky-100 overflow-x-auto">
+                  {Object.values(houseSession!.visitors).map(v => (
+                    <div key={v.uid} className="flex-shrink-0 flex flex-col items-center gap-0.5">
+                      <div className="w-7 h-7 rounded-full bg-fuchsia-200 border-2 border-fuchsia-400 flex items-center justify-center text-base">👧</div>
+                      <span className="text-[8px] font-bold text-slate-500 max-w-[32px] truncate">{v.heroName}</span>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                  {messages.map(msg => (
-                    <div key={msg.id} className={`flex flex-col ${msg.senderId === activeChild?.uid ? 'items-start' : 'items-end'}`}>
-                      <span className="text-[9px] font-bold text-slate-400 mb-0.5 px-2">{msg.senderName}</span>
-                      <div className={`px-3 py-2 rounded-2xl max-w-[90%] font-bold text-sm shadow-sm ${msg.senderId === activeChild?.uid ? 'bg-sky-500 text-white rounded-tr-sm' : 'bg-slate-100 text-slate-700 rounded-tl-sm'}`}>
+              )}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {houseMessages.length === 0 && (
+                  <div className="text-center text-slate-300 font-bold text-xs mt-8">لا رسائل بعد... ابدئي المحادثة! 💬</div>
+                )}
+                {houseMessages.map(msg => {
+                  const isMe = msg.senderId === activeChild?.uid;
+                  return (
+                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-start' : 'items-end'}`}>
+                      <span className="text-[9px] font-bold text-slate-400 mb-0.5 px-2">{msg.senderHeroName}</span>
+                      <div className={`px-3 py-2 rounded-2xl max-w-[90%] font-bold text-sm shadow-sm ${isMe ? 'bg-sky-500 text-white rounded-tr-sm' : 'bg-fuchsia-100 text-fuchsia-800 rounded-tl-sm'}`}>
                         {msg.text}
                       </div>
                     </div>
-                  ))}
-                  <div ref={scrollRef} />
-                </div>
-                <form onSubmit={handleSendMessage} className="p-2 bg-slate-50 border-t-2 border-white flex gap-2">
-                  <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="اكتبي رسالة..." className="flex-1 bg-white border-2 border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-sky-400 font-bold text-sm" />
-                  <button type="submit" disabled={!newMessage.trim()} className="bg-sky-500 text-white p-2 rounded-xl hover:bg-sky-600 disabled:opacity-50"><Send className="w-4 h-4" /></button>
-                </form>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          {!showChat && (
-            <button onClick={() => setShowChat(true)} className="w-14 h-14 bg-sky-500 text-white rounded-full shadow-2xl flex items-center justify-center border-4 border-white hover:scale-110 transition-transform">
-              <MessageCircle className="w-7 h-7" />
-            </button>
+                  );
+                })}
+                <div ref={scrollRef} />
+              </div>
+              <form onSubmit={handleSendMessage} className="p-2 bg-slate-50 border-t-2 border-white flex gap-2">
+                <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="اكتبي رسالة..." className="flex-1 bg-white border-2 border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-sky-400 font-bold text-sm" dir="rtl" />
+                <button type="submit" disabled={!newMessage.trim()} className="bg-sky-500 text-white p-2 rounded-xl hover:bg-sky-600 disabled:opacity-50"><Send className="w-4 h-4" /></button>
+              </form>
+            </motion.div>
           )}
-        </div>
-      )}
+        </AnimatePresence>
+        {!showChat && (
+          <button onClick={() => setShowChat(true)} className="relative w-14 h-14 bg-sky-500 text-white rounded-full shadow-2xl flex items-center justify-center border-4 border-white hover:scale-110 transition-transform">
+            <MessageCircle className="w-7 h-7" />
+            {houseMessages.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-fuchsia-500 text-white text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center">{houseMessages.length}</span>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* ── JITSI CALL OVERLAY ── */}
+      <AnimatePresence>
+        {(showCall || (isHost && houseSession?.callActive)) && (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+            className="absolute inset-4 z-[60] rounded-[2rem] overflow-hidden shadow-2xl border-4 border-emerald-400 pointer-events-auto flex flex-col">
+            <div className="bg-emerald-600 px-5 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Video className="w-5 h-5 text-white" />
+                <span className="font-black text-white">مكالمة الفيديو الجماعية</span>
+                <span className="bg-white/20 text-white text-xs px-2 py-0.5 rounded-full font-bold">
+                  {1 + Object.values(houseSession?.visitors ?? {}).length} 👧
+                </span>
+              </div>
+              <button onClick={() => {
+                  if (isHost) { handleToggleCall(); } else { setShowCall(false); }
+                }}
+                className="bg-red-500 hover:bg-red-600 text-white px-4 py-1.5 rounded-xl font-bold text-sm flex items-center gap-2">
+                <PhoneOff className="w-4 h-4" />
+                {isHost ? 'إنهاء المكالمة' : 'مغادرة'}
+              </button>
+            </div>
+            <iframe
+              src={`https://meet.jit.si/NadiBatlat-${hostProfile?.uid}#userInfo.displayName="${encodeURIComponent(activeChild?.heroName || activeChild?.name || 'بطلة')}"&config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false`}
+              className="flex-1 w-full"
+              allow="camera; microphone; fullscreen; display-capture"
+              style={{ border: 'none' }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── MULTI-INVITE PANEL ── */}
+      <AnimatePresence>
+        {showInvite && isHost && (
+          <motion.div initial={{ opacity: 0, x: 80 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 80 }}
+            className="absolute top-24 left-4 z-[55] w-72 pointer-events-auto">
+            <div className="bg-white/97 backdrop-blur-xl rounded-[2rem] shadow-2xl border-4 border-sky-200 overflow-hidden">
+              <div className="bg-gradient-to-l from-sky-100 to-fuchsia-100 p-4 flex justify-between items-center">
+                <h3 className="font-black text-sky-700 flex items-center gap-2 text-sm">
+                  <Users className="w-4 h-4" /> ادعي صديقات
+                </h3>
+                <button onClick={() => setShowInvite(false)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="p-3 max-h-72 overflow-y-auto space-y-2">
+                {friends.length === 0 ? (
+                  <div className="text-center text-slate-400 font-bold text-sm py-6">لا يوجد أصدقاء بعد 😊</div>
+                ) : friends.map(friend => {
+                  const inSession = !!houseSession?.visitors?.[friend.uid];
+                  return (
+                    <label key={friend.uid} className={`flex items-center gap-3 p-2.5 rounded-2xl cursor-pointer transition-colors ${inSession ? 'bg-emerald-50 border-2 border-emerald-200' : selectedFriends.has(friend.uid) ? 'bg-sky-50 border-2 border-sky-300' : 'border-2 border-transparent hover:bg-slate-50'}`}>
+                      <input type="checkbox" disabled={inSession}
+                        checked={selectedFriends.has(friend.uid) || inSession}
+                        onChange={e => setSelectedFriends(prev => { const s = new Set(prev); e.target.checked ? s.add(friend.uid) : s.delete(friend.uid); return s; })}
+                        className="w-4 h-4 rounded accent-sky-500" />
+                      <div className="w-9 h-9 rounded-full bg-fuchsia-200 flex items-center justify-center text-xl border-2 border-fuchsia-300">👧</div>
+                      <div>
+                        <div className="font-black text-sm text-slate-700">{friend.heroName || friend.name}</div>
+                        {inSession && <div className="text-[10px] text-emerald-600 font-bold">في البيت ✓</div>}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              {selectedFriends.size > 0 && (
+                <div className="p-3 border-t-2 border-sky-100">
+                  <button onClick={handleSendInvites} disabled={inviteSending}
+                    className="w-full bg-sky-500 hover:bg-sky-600 text-white font-black py-2.5 rounded-2xl shadow-md disabled:opacity-60 text-sm flex items-center justify-center gap-2">
+                    {inviteSending ? '...جاري الإرسال' : `📨 ادعِ ${selectedFriends.size} صديقة`}
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── GAME WIDGET ── */}
       {visitId !== 'self' && (
