@@ -63,6 +63,7 @@ export default function HeroHouse() {
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [showChat, setShowChat] = useState(true);
   const [isActionBusy, setIsActionBusy] = useState(false);
+  const [selectedWardrobe, setSelectedWardrobe] = useState<'princess' | 'garden' | 'star' | 'ocean'>('princess');
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -191,6 +192,33 @@ export default function HeroHouse() {
     };
     const audio = new Audio(sounds[type]);
     audio.play().catch(() => {});
+  };
+
+  const wardrobes = {
+    princess: [
+      { name: 'فستان أميرة', emoji: '👗' },
+      { name: 'تاج لؤلؤ', emoji: '👑' },
+      { name: 'حذاء لامع', emoji: '👠' },
+      { name: 'حقيبة وردية', emoji: '👜' },
+    ],
+    garden: [
+      { name: 'فستان زهور', emoji: '🌸' },
+      { name: 'قبعة شمس', emoji: '🧢' },
+      { name: 'حذاء مريح', emoji: '👟' },
+      { name: 'إكليل', emoji: '💐' },
+    ],
+    star: [
+      { name: 'فستان نجوم', emoji: '✨' },
+      { name: 'كعب فضي', emoji: '🪩' },
+      { name: 'وشاح بنفسجي', emoji: '🧣' },
+      { name: 'نجمة صغيرة', emoji: '⭐' },
+    ],
+    ocean: [
+      { name: 'فستان بحر', emoji: '🌊' },
+      { name: 'صدفة', emoji: '🐚' },
+      { name: 'لؤلؤة', emoji: '🫧' },
+      { name: 'أحذية زرقاء', emoji: '🥿' },
+    ],
   };
 
   const isLocalVisitMode = visitId === 'self' || !!visitId?.startsWith('view_');
