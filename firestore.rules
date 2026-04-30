@@ -291,6 +291,7 @@ service cloud.firestore {
 
       allow delete: if false; // Calls should be kept for history
       
+@@ -294,40 +294,101 @@ service cloud.firestore {
       match /offerCandidates/{candidateId} {
         allow read: if true;
         allow create: if hasOnlyAllowedFields(['candidate', 'sdpMid', 'sdpMLineIndex', 'usernameFragment']);
@@ -314,6 +315,67 @@ service cloud.firestore {
       allow read: if true;
       // Anyone can send messages (children use PIN login)
       allow create: if true;
+    }
+
+    function isValidVisitRoomParticipant(data) {
+      return hasOnlyAllowedFields(['uid', 'heroName', 'avatar', 'joinedAt']) &&
+             data.uid is string &&
+             data.heroName is string &&
+             data.joinedAt is number;
+    }
+
+    function isValidVisitRoomInvite(data) {
+      return hasOnlyAllowedFields(['fromId', 'fromName', 'toId', 'toName', 'status', 'createdAt', 'respondedAt']) &&
+             data.fromId is string &&
+             data.toId is string &&
+             data.fromId != data.toId &&
+             data.status in ['pending', 'accepted', 'rejected'] &&
+             data.createdAt is number;
+    }
+
+    function isValidInviteStatusTransition() {
+      return (
+        (resource.data.status == 'pending' && request.resource.data.status in ['accepted', 'rejected']) ||
+        (resource.data.status == request.resource.data.status)
+      );
+    }
+
+    match /visit_rooms/{visitId}/participants/{participantId} {
+      allow read: if true;
+      allow create, update: if isValidVisitRoomParticipant(request.resource.data) &&
+                            request.resource.data.uid == participantId;
+      allow delete: if true;
+    }
+
+    match /visit_rooms/{visitId}/invites/{inviteId} {
+      allow read: if true;
+      allow create: if isValidVisitRoomInvite(request.resource.data) && request.resource.data.status == 'pending';
+      allow update: if isValidVisitRoomInvite(request.resource.data) &&
+                    areImmutableFieldsUnchanged(['fromId', 'fromName', 'toId', 'toName', 'createdAt']) &&
+                    isValidInviteStatusTransition();
+      allow delete: if false;
+    }
+
+    match /visit_rooms/{visitId}/calls/{callId} {
+      allow read: if true;
+      allow create: if isValidCallDoc(request.resource.data) &&
+                    request.resource.data.status == 'ringing' &&
+                    request.resource.data.callerId != request.resource.data.calleeId;
+      allow update: if isValidCallDoc(request.resource.data) &&
+                    areImmutableFieldsUnchanged(['chatId', 'callerId', 'callerName', 'calleeId', 'type', 'createdAt']);
+      allow delete: if false;
+    }
+
+    match /safety_reports/{id} {
+      allow read: if isAdmin();
+      allow create: if hasOnlyAllowedFields(['visitId', 'reporterId', 'reporterName', 'createdAt', 'status']) &&
+                    request.resource.data.visitId is string &&
+                    request.resource.data.reporterId is string &&
+                    request.resource.data.reporterName is string &&
+                    request.resource.data.createdAt is number &&
+                    request.resource.data.status == 'new';
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /stories/{id} {
