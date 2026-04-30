@@ -1,591 +1,583 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
-diff --git a/src/pages/FriendsChat.tsx b/src/pages/FriendsChat.tsx
-index 86a589237fe87209c6ceb517088e070ebdcdc78f..e6f39d7f471831c61d055c69c96e348e9832df56 100644
---- a/src/pages/FriendsChat.tsx
-+++ b/src/pages/FriendsChat.tsx
-@@ -1,45 +1,46 @@
- import React, { useState, useEffect, useRef } from 'react';
- import { useNavigate } from 'react-router-dom';
- import { motion, AnimatePresence } from 'motion/react';
- import { 
-   ArrowRight, Users, MessageCircle, UserPlus, Check, X, Send, Sparkles,
-   Search, Phone, Video, Info, Paperclip, Smile, Mic, MoreVertical, CheckCheck, Reply, Image as ImageIcon,
-   Settings, Palette, ChevronLeft, Trash2, Square
- } from 'lucide-react';
- import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
- import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
- import { db, storage } from '../firebase';
- import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, orderBy, getDocs, setDoc, limit, arrayUnion, arrayRemove } from 'firebase/firestore';
- import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
- import { ChildProfile, FriendRequest, DirectMessage, ChatSession, OnlineStatus, CallSession } from '../types';
- import { CallScreen } from '../components/CallScreen';
- import { IncomingCallModal } from '../components/IncomingCallModal';
- import { CreateGroupModal } from '../components/CreateGroupModal';
- import { useNotifications } from '../hooks/useNotifications';
- import { toast } from 'sonner';
- import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
-+import { chatService } from '../services/chatService';
- 
- const CHAT_THEMES = {
-   default: { bg: 'bg-white', bubble: 'bg-blue-500', name: 'الافتراضي (أزرق)' },
-   love: { bg: 'bg-pink-50', bubble: 'bg-pink-500', name: 'حب (وردي)' },
-   forest: { bg: 'bg-green-50', bubble: 'bg-green-500', name: 'غابة (أخضر)' },
-   ocean: { bg: 'bg-cyan-50', bubble: 'bg-cyan-500', name: 'محيط (سماوي)' },
-   night: { bg: 'bg-slate-900', bubble: 'bg-indigo-500', name: 'ليلي (بنفسجي داكن)' }
- };
- 
- function isChildProfile(obj: any): obj is ChildProfile {
-   return obj && 'uid' in obj && !('participants' in obj);
- }
- 
- function isChatSession(obj: any): obj is ChatSession {
-   return obj && 'participants' in obj;
- }
- 
- export default function FriendsChat() {
-   const navigate = useNavigate();
-   const [activeChild, setActiveChild] = useState<ChildProfile | null>(null);
-   const [allChildren, setAllChildren] = useState<ChildProfile[]>([]);
-   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
-   const [friends, setFriends] = useState<ChildProfile[]>([]);
-   const [chats, setChats] = useState<ChatSession[]>([]);
-   const [activeChat, setActiveChat] = useState<ChildProfile | ChatSession | null>(null);
-@@ -61,79 +62,72 @@ export default function FriendsChat() {
-   const chatContainerRef = useRef<HTMLDivElement>(null);
-   const fileInputRef = useRef<HTMLInputElement>(null);
-   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-   const audioChunksRef = useRef<Blob[]>([]);
-   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
- 
-   // Modals & Sidebars
-   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-   const [isChatInfoOpen, setIsChatInfoOpen] = useState(false);
-   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
-   const [customStatusInput, setCustomStatusInput] = useState('');
-   const [onlineStatuses, setOnlineStatuses] = useState<Record<string, OnlineStatus>>({});
-   const [activeCall, setActiveCall] = useState<CallSession | null>(null);
-   const [incomingCall, setIncomingCall] = useState<CallSession | null>(null);
- 
-   const { playMessageSound, playCallSound } = useNotifications(activeChild?.uid);
-   const callAudioRef = useRef<HTMLAudioElement | null>(null);
- 
-   useEffect(() => {
-     if (!activeChild || chats.length === 0) return;
- 
-     const unsubscribes: (() => void)[] = [];
- 
-     chats.forEach(chat => {
--      const qCalls = query(
--        collection(db, 'chats', chat.id, 'calls'),
--        where('calleeId', '==', activeChild.uid),
--        where('status', '==', 'ringing')
--      );
--
--      const unsub = onSnapshot(qCalls, (snapshot) => {
--        if (!snapshot.empty) {
--          const callData = snapshot.docs[0].data() as CallSession;
--          setIncomingCall({ ...callData, id: snapshot.docs[0].id });
-+      const unsub = chatService.listenIncomingCalls(chat.id, activeChild.uid, (callData) => {
-+        if (callData) {
-+          setIncomingCall(callData as CallSession);
-           if (!callAudioRef.current) {
-             const audio = playCallSound();
-             callAudioRef.current = audio;
-           }
-         } else {
-           // Only clear if this was the active incoming call
-           setIncomingCall(prev => {
-             if (prev && prev.chatId === chat.id) {
-               if (callAudioRef.current) {
-                 callAudioRef.current.pause();
-                 callAudioRef.current.currentTime = 0;
-                 callAudioRef.current = null;
-               }
-               return null;
-             }
-             return prev;
-           });
-         }
--      }, (err) => handleFirestoreError(err, OperationType.GET, `chats/${chat.id}/calls`));
-+      });
-       
-       unsubscribes.push(unsub);
-     });
- 
-     return () => {
-       unsubscribes.forEach(unsub => unsub());
-       if (callAudioRef.current) {
-         callAudioRef.current.pause();
-         callAudioRef.current.currentTime = 0;
-         callAudioRef.current = null;
-       }
-     };
-   }, [activeChild, chats, playCallSound]);
- 
-   useEffect(() => {
-     // Fetch online statuses for all children
-     const unsubscribe = onSnapshot(collection(db, 'online_status'), (snapshot) => {
-       const statuses: Record<string, OnlineStatus> = {};
-       snapshot.docs.forEach(doc => {
-         statuses[doc.id] = doc.data() as OnlineStatus;
-       });
-       setOnlineStatuses(statuses);
-     }, (err) => handleFirestoreError(err, OperationType.GET, 'online_status'));
- 
-     return () => unsubscribe();
-@@ -153,56 +147,54 @@ export default function FriendsChat() {
-     
-     const diffInHours = Math.floor(diffInMinutes / 60);
-     if (diffInHours < 24) return `آخر ظهور منذ ${diffInHours} ساعة`;
-     
-     const diffInDays = Math.floor(diffInHours / 24);
-     return `آخر ظهور منذ ${diffInDays} يوم`;
-   };
- 
-   useEffect(() => {
-     const childStr = localStorage.getItem('active_child');
-     if (!childStr) {
-       navigate('/');
-       return;
-     }
-     const child = JSON.parse(childStr) as ChildProfile;
-     setActiveChild(child);
-     setCustomStatusInput(child.customStatus || '');
- 
-     // Fetch all children
-     const unsubscribeChildren = onSnapshot(collection(db, 'children_profiles'), (snapshot) => {
-       const children = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as ChildProfile));
-       setAllChildren(children.filter(c => c.uid !== child.uid && c.status === 'approved'));
-     }, (err) => handleFirestoreError(err, OperationType.GET, 'children_profiles'));
- 
-     // Fetch friend requests
--    const qRequests = query(collection(db, 'friend_requests'));
--    const unsubscribeRequests = onSnapshot(qRequests, (snapshot) => {
--      const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FriendRequest));
--      const myRequests = requests.filter(r => r.fromId === child.uid || r.toId === child.uid);
-+    const unsubscribeRequests = chatService.listenFriendRequests((requests) => {
-+      const myRequests = (requests as FriendRequest[]).filter(r => r.fromId === child.uid || r.toId === child.uid);
-       setFriendRequests(myRequests);
--    }, (err) => handleFirestoreError(err, OperationType.GET, 'friend_requests'));
-+    });
- 
-     // Fetch chats
-     const qChats = query(collection(db, 'chats'), where('participants', 'array-contains', child.uid));
-     const unsubscribeChats = onSnapshot(qChats, (snapshot) => {
-       snapshot.docChanges().forEach(change => {
-         if (change.type === 'modified' || change.type === 'added') {
-           const chatData = change.doc.data() as ChatSession;
-           const lastMsg = chatData.lastMessage;
-           const readBy = (chatData as any).readBy || [];
-           if (lastMsg && lastMsg.senderId !== child.uid && !readBy.includes(child.uid)) {
-             // Only play sound if it's a recent message (within last 10 seconds) to avoid playing on initial load for old unread messages
-             if (Date.now() - lastMsg.timestamp < 10000) {
-               playMessageSound();
-             }
-           }
-         }
-       });
- 
-       const fetchedChats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatSession));
-       setChats(fetchedChats.sort((a, b) => b.updatedAt - a.updatedAt));
-     }, (err) => handleFirestoreError(err, OperationType.GET, 'chats'));
- 
-     return () => {
-       unsubscribeChildren();
-       unsubscribeRequests();
-@@ -211,369 +203,349 @@ export default function FriendsChat() {
-     };
-   }, [navigate, playMessageSound]);
- 
-   useEffect(() => {
-     if (!activeChild || !allChildren.length) return;
-     const acceptedIds = new Set<string>();
-     friendRequests.forEach(req => {
-       if (req.status === 'accepted') {
-         if (req.fromId === activeChild.uid) acceptedIds.add(req.toId);
-         if (req.toId === activeChild.uid) acceptedIds.add(req.fromId);
-       }
-     });
-     setFriends(allChildren.filter(c => acceptedIds.has(c.uid)));
-   }, [friendRequests, activeChild, allChildren]);
- 
-   useEffect(() => {
-     if (!activeChild || !activeChat) return;
- 
-     let chatId = '';
-     if (isChatSession(activeChat)) {
-       chatId = activeChat.id;
-     } else {
-       chatId = [activeChild.uid, activeChat.uid].sort().join('_');
-     }
- 
--    const qMessages = query(
--      collection(db, 'direct_messages'),
--      where('chatId', '==', chatId),
--      orderBy('timestamp', 'desc'),
--      limit(messageLimit)
--    );
--
--    const unsubscribeMessages = onSnapshot(qMessages, (snapshot) => {
--      const fetchedMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DirectMessage));
-+    const unsubscribeMessages = chatService.listenMessages(chatId, (fetchedMessagesRaw) => {
-+      const fetchedMessages = [...(fetchedMessagesRaw as DirectMessage[])].reverse().slice(0, messageLimit);
-       // Reverse to show oldest at top, newest at bottom
-       setMessages(fetchedMessages.reverse());
-       
-       // Mark as read
-       const unreadMessages = fetchedMessages.filter(m => m.senderId !== activeChild.uid && (!m.readBy || !m.readBy.includes(activeChild.uid)));
-       
-       if (unreadMessages.length > 0) {
-         unreadMessages.forEach(async (msg) => {
-           try {
--            await updateDoc(doc(db, 'direct_messages', msg.id), {
--              readBy: arrayUnion(activeChild.uid)
--            });
-+            await chatService.markMessageRead(msg.id, activeChild.uid);
-           } catch (e) {
-             console.error("Error marking read", e);
-           }
-         });
- 
-         // Also mark the chat as read
--        updateDoc(doc(db, 'chats', chatId), {
-+        chatService.updateChatMeta(chatId, {
-           readBy: arrayUnion(activeChild.uid)
-         }).catch(e => {
-           console.error("Error marking chat read", e);
-         });
-       }
- 
-       // Only scroll to bottom if we are near the bottom or it's initial load
-       if (chatContainerRef.current) {
-         const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
-         const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
-         if (isNearBottom || fetchedMessages.length <= 50) {
-           setTimeout(() => {
-             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-           }, 100);
-         }
-       }
--    }, (err) => handleFirestoreError(err, OperationType.GET, 'direct_messages'));
-+    });
- 
-     return () => unsubscribeMessages();
-   }, [activeChat, activeChild, messageLimit]);
- 
-   useEffect(() => {
-     return () => {
-       if (activeChild && activeChat) {
-         let chatId = '';
-         if (isChatSession(activeChat)) {
-           chatId = activeChat.id;
-         } else {
-           chatId = [activeChild.uid, activeChat.uid].sort().join('_');
-         }
--        setDoc(doc(db, 'chats', chatId), { typing: arrayRemove(activeChild.uid) }, { merge: true }).catch(() => {});
-+        chatService.setTyping(chatId, activeChild.uid, false).catch(() => {});
-       }
-     };
-   }, [activeChild, activeChat]);
- 
-   if (!activeChild) return null;
- 
-   const handleSendRequest = async (toChild: ChildProfile) => {
-     try {
--      await addDoc(collection(db, 'friend_requests'), {
-+      await chatService.sendFriendRequest({
-         fromId: activeChild.uid,
-         fromName: activeChild.name,
-         fromHeroName: activeChild.heroName,
-         toId: toChild.uid,
-         toName: toChild.name,
-         status: 'pending',
-         timestamp: Date.now()
-       });
-       toast.success(`تم إرسال طلب الصداقة إلى ${toChild.name}!`);
-     } catch (error) {
-       handleFirestoreError(error, OperationType.CREATE, 'friend_requests');
-     }
-   };
- 
-   const handleAcceptRequest = async (requestId: string) => {
-     try {
--      await updateDoc(doc(db, 'friend_requests', requestId), { status: 'accepted' });
-+      await chatService.updateFriendRequest(requestId, 'accepted');
-       toast.success('تم قبول طلب الصداقة!');
-     } catch (error) {
-       handleFirestoreError(error, OperationType.UPDATE, 'friend_requests');
-     }
-   };
- 
-   const handleDeclineRequest = async (requestId: string) => {
-     try {
--      await updateDoc(doc(db, 'friend_requests', requestId), { status: 'declined' });
-+      await chatService.updateFriendRequest(requestId, 'declined');
-     } catch (error) {
-       handleFirestoreError(error, OperationType.UPDATE, 'friend_requests');
-     }
-   };
- 
-   const sendMessage = async (text: string, type: 'text' | 'image' | 'voice' | 'system' = 'text', mediaUrl?: string) => {
-     if (!activeChat) return;
-     
-     let chatId = '';
-     let participants: string[] = [];
-     let chatType: 'direct' | 'group' = 'direct';
- 
-     if (isChatSession(activeChat) && activeChat.type === 'group') {
-       chatId = activeChat.id;
-       participants = activeChat.participants;
-       chatType = 'group';
-     } else {
-       const otherId = isChatSession(activeChat) 
-         ? activeChat.participants.find(p => p !== activeChild.uid) 
-         : activeChat.uid;
-       
-       if (!otherId) return;
-       
-       chatId = [activeChild.uid, otherId].sort().join('_');
-       participants = [activeChild.uid, otherId];
-     }
- 
-     const now = Date.now();
- 
-     const messageData: any = {
-       chatId,
-       senderId: activeChild.uid,
-       senderName: activeChild.name,
-       text,
-       type,
-       timestamp: now,
-       readBy: [activeChild.uid]
-     };
- 
-     if (mediaUrl) {
-       if (type === 'image') messageData.imageUrl = mediaUrl;
-       if (type === 'voice') messageData.voiceUrl = mediaUrl;
-     }
- 
-     if (replyingTo) {
-       messageData.replyTo = replyingTo.id;
-     }
- 
-     try {
--      await addDoc(collection(db, 'direct_messages'), messageData);
-+      await chatService.sendDirectMessage(messageData);
-       
-       const chatUpdateData: any = {
-         participants,
-         lastMessage: {
-           text: type === 'text' ? text : type === 'image' ? 'أرسل صورة 📷' : type === 'voice' ? 'أرسل تسجيلاً صوتياً 🎤' : text,
-           timestamp: now,
-           senderId: activeChild.uid,
-           type
-         },
-         updatedAt: now,
-         type: chatType
-       };
- 
-       if (isChatSession(activeChat) && activeChat.type === 'group') {
-         chatUpdateData.name = activeChat.name;
-         chatUpdateData.admins = activeChat.admins;
-         chatUpdateData.createdBy = activeChat.createdBy;
-       }
- 
--      await setDoc(doc(db, 'chats', chatId), chatUpdateData, { merge: true });
-+      await chatService.updateChatMeta(chatId, chatUpdateData);
- 
-       setNewMessage('');
-       setReplyingTo(null);
-     } catch (error) {
-       handleFirestoreError(error, OperationType.CREATE, 'direct_messages');
-     }
-   };
- 
-   const handleStartCall = async (type: 'audio' | 'video') => {
-     if (!activeChild || !activeChat) return;
-     
-     // Prevent starting a new call if already in one or receiving one
-     if (activeCall || incomingCall) {
-       toast.error('أنت في مكالمة بالفعل');
-       return;
-     }
- 
-     try {
-       // Check if the other user is already in a call (Busy state)
-       // Since we are using path-based isolation, we can only check if they are busy in the current chat
-       const otherId = isChatSession(activeChat) 
-         ? activeChat.participants.find(p => p !== activeChild.uid) 
-         : activeChat.uid;
-         
-       if (!otherId) return;
- 
-       const chatId = [activeChild.uid, otherId].sort().join('_');
--      const qCalls = query(
--        collection(db, 'chats', chatId, 'calls'),
--        where('calleeId', '==', otherId),
--        where('status', 'in', ['ringing', 'accepted', 'connected'])
--      );
--      const activeCallsSnapshot = await getDocs(qCalls);
-+      const activeCallsSnapshot = await chatService.findActiveCalls(chatId, otherId);
-       
-       if (!activeCallsSnapshot.empty) {
-         toast.error('الخط مشغول حالياً');
-         return;
-       }
- 
--      const callDoc = await addDoc(collection(db, 'chats', chatId, 'calls'), {
-+      const callDoc = await chatService.startCall(chatId, {
-         chatId,
-         callerId: activeChild.uid,
-         callerName: activeChild.name,
-         callerAvatar: activeChild.avatar || null,
-         calleeId: otherId,
-         type,
-         status: 'ringing',
-         createdAt: Date.now()
-       });
-       
-       setActiveCall({
-         id: callDoc.id,
-         chatId,
-         callerId: activeChild.uid,
-         callerName: activeChild.name,
-         callerAvatar: activeChild.avatar,
-         calleeId: otherId,
-         type,
-         status: 'ringing',
-         createdAt: Date.now()
-       });
-     } catch (error) {
-       handleFirestoreError(error, OperationType.CREATE, 'calls');
-       toast.error('حدث خطأ أثناء بدء المكالمة');
-     }
-   };
- 
-   const handleAcceptCall = async () => {
-     if (!incomingCall) return;
-     try {
--      await updateDoc(doc(db, 'chats', incomingCall.chatId, 'calls', incomingCall.id), {
-+      await chatService.updateCall(incomingCall.chatId, incomingCall.id, {
-         status: 'accepted',
-         acceptedAt: Date.now()
-       });
-       setActiveCall({ ...incomingCall, status: 'accepted' });
-       setIncomingCall(null);
-     } catch (error) {
-       handleFirestoreError(error, OperationType.UPDATE, `chats/${incomingCall.chatId}/calls/${incomingCall.id}`);
-     }
-   };
- 
-   const handleRejectCall = async () => {
-     if (!incomingCall) return;
-     try {
--      await updateDoc(doc(db, 'chats', incomingCall.chatId, 'calls', incomingCall.id), {
-+      await chatService.updateCall(incomingCall.chatId, incomingCall.id, {
-         status: 'rejected',
-         endedAt: Date.now()
-       });
-       setIncomingCall(null);
-     } catch (error) {
-       handleFirestoreError(error, OperationType.UPDATE, `chats/${incomingCall.chatId}/calls/${incomingCall.id}`);
-     }
-   };
- 
-   const handleEndCall = () => {
-     setActiveCall(null);
-   };
- 
-   const handleSendMessage = () => {
-     if (!newMessage.trim()) return;
-     sendMessage(newMessage.trim(), 'text');
-   };
- 
-   const handleTyping = () => {
-     if (!activeChat || !activeChild) return;
-     
-     let chatId = '';
-     if (isChatSession(activeChat)) {
-       chatId = activeChat.id;
-     } else {
-       chatId = [activeChild.uid, activeChat.uid].sort().join('_');
-     }
-     
--    const chatRef = doc(db, 'chats', chatId);
--    setDoc(chatRef, { typing: arrayUnion(activeChild.uid) }, { merge: true }).catch(() => {});
-+    chatService.setTyping(chatId, activeChild.uid, true).catch(() => {});
- 
-     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-     typingTimeoutRef.current = setTimeout(() => {
--      setDoc(chatRef, { typing: arrayRemove(activeChild.uid) }, { merge: true }).catch(() => {});
-+      chatService.setTyping(chatId, activeChild.uid, false).catch(() => {});
-     }, 2000);
-   };
- 
-   const handleReact = async (messageId: string, emoji: string) => {
-     const msg = messages.find(m => m.id === messageId);
-     if (!msg) return;
- 
-     const currentReactions = msg.reactions || {};
-     const usersWhoReactedWithEmoji = currentReactions[emoji] || [];
-     
-     let newReactions = { ...currentReactions };
-     
-     if (usersWhoReactedWithEmoji.includes(activeChild.uid)) {
-       newReactions[emoji] = usersWhoReactedWithEmoji.filter(id => id !== activeChild.uid);
-       if (newReactions[emoji].length === 0) delete newReactions[emoji];
-     } else {
-       newReactions[emoji] = [...usersWhoReactedWithEmoji, activeChild.uid];
-     }
- 
-     try {
--      await updateDoc(doc(db, 'direct_messages', messageId), { reactions: newReactions });
-+      await chatService.updateReactions(messageId, newReactions);
-       setShowEmojiPicker(null);
-     } catch (error) {
-       handleFirestoreError(error, OperationType.UPDATE, 'direct_messages');
-     }
-   };
- 
-   const handleDeleteMessage = async (messageId: string) => {
-     if (window.confirm('هل أنت متأكد من حذف هذه الرسالة؟')) {
-       try {
--        await updateDoc(doc(db, 'direct_messages', messageId), {
--          text: 'تم حذف هذه الرسالة',
--          type: 'system',
--          imageUrl: null,
--          voiceUrl: null
--        });
-+        await chatService.editMessage(messageId, 'تم حذف هذه الرسالة');
-         toast.success('تم حذف الرسالة');
-       } catch (error) {
-         handleFirestoreError(error, OperationType.UPDATE, 'direct_messages');
-         toast.error('حدث خطأ أثناء الحذف');
-       }
-     }
-   };
- 
-   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-     const file = e.target.files?.[0];
-     if (!file || !activeChild || !activeChat) return;
- 
-     setIsUploading(true);
-     try {
-       // Create a reference to the file in Firebase Storage
-       const fileExtension = file.name.split('.').pop() || 'jpg';
-       const fileName = `chat_images/${activeChild.uid}_${Date.now()}.${fileExtension}`;
-       const storageRef = ref(storage, fileName);
- 
-       // Upload the file
-       await uploadBytes(storageRef, file);
- 
-       // Get the download URL
-       const downloadURL = await getDownloadURL(storageRef);
- 
- 
-EOF
-)
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  ArrowRight, Users, MessageCircle, UserPlus, Check, X, Send, Sparkles,
+  Search, Phone, Video, Info, Paperclip, Smile, Mic, MoreVertical, CheckCheck, Reply, Image as ImageIcon,
+  Settings, Palette, ChevronLeft, Trash2, Square
+} from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { db, storage } from '../firebase';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, orderBy, getDocs, setDoc, limit, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ChildProfile, FriendRequest, DirectMessage, ChatSession, OnlineStatus, CallSession } from '../types';
+import { CallScreen } from '../components/CallScreen';
+import { IncomingCallModal } from '../components/IncomingCallModal';
+import { CreateGroupModal } from '../components/CreateGroupModal';
+import { useNotifications } from '../hooks/useNotifications';
+import { toast } from 'sonner';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+
+const CHAT_THEMES = {
+  default: { bg: 'bg-white', bubble: 'bg-blue-500', name: 'الافتراضي (أزرق)' },
+  love: { bg: 'bg-pink-50', bubble: 'bg-pink-500', name: 'حب (وردي)' },
+  forest: { bg: 'bg-green-50', bubble: 'bg-green-500', name: 'غابة (أخضر)' },
+  ocean: { bg: 'bg-cyan-50', bubble: 'bg-cyan-500', name: 'محيط (سماوي)' },
+  night: { bg: 'bg-slate-900', bubble: 'bg-indigo-500', name: 'ليلي (بنفسجي داكن)' }
+};
+
+function isChildProfile(obj: any): obj is ChildProfile {
+  return obj && 'uid' in obj && !('participants' in obj);
+}
+
+function isChatSession(obj: any): obj is ChatSession {
+  return obj && 'participants' in obj;
+}
+
+export default function FriendsChat() {
+  const navigate = useNavigate();
+  const [activeChild, setActiveChild] = useState<ChildProfile | null>(null);
+  const [allChildren, setAllChildren] = useState<ChildProfile[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [friends, setFriends] = useState<ChildProfile[]>([]);
+  const [chats, setChats] = useState<ChatSession[]>([]);
+  const [activeChat, setActiveChat] = useState<ChildProfile | ChatSession | null>(null);
+  const [messages, setMessages] = useState<DirectMessage[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [activeTab, setActiveTab] = useState<'chat' | 'find'>('chat');
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // New Features State
+  const [messageLimit, setMessageLimit] = useState(50);
+  const [replyingTo, setReplyingTo] = useState<DirectMessage | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  
+  // Refs
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Modals & Sidebars
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isChatInfoOpen, setIsChatInfoOpen] = useState(false);
+  const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
+  const [customStatusInput, setCustomStatusInput] = useState('');
+  const [onlineStatuses, setOnlineStatuses] = useState<Record<string, OnlineStatus>>({});
+  const [activeCall, setActiveCall] = useState<CallSession | null>(null);
+  const [incomingCall, setIncomingCall] = useState<CallSession | null>(null);
+
+  const { playMessageSound, playCallSound } = useNotifications(activeChild?.uid);
+  const callAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (!activeChild || chats.length === 0) return;
+
+    const unsubscribes: (() => void)[] = [];
+
+    chats.forEach(chat => {
+      const qCalls = query(
+        collection(db, 'chats', chat.id, 'calls'),
+        where('calleeId', '==', activeChild.uid),
+        where('status', '==', 'ringing')
+      );
+
+      const unsub = onSnapshot(qCalls, (snapshot) => {
+        if (!snapshot.empty) {
+          const callData = snapshot.docs[0].data() as CallSession;
+          setIncomingCall({ ...callData, id: snapshot.docs[0].id });
+          if (!callAudioRef.current) {
+            const audio = playCallSound();
+            callAudioRef.current = audio;
+          }
+        } else {
+          // Only clear if this was the active incoming call
+          setIncomingCall(prev => {
+            if (prev && prev.chatId === chat.id) {
+              if (callAudioRef.current) {
+                callAudioRef.current.pause();
+                callAudioRef.current.currentTime = 0;
+                callAudioRef.current = null;
+              }
+              return null;
+            }
+            return prev;
+          });
+        }
+      }, (err) => handleFirestoreError(err, OperationType.GET, `chats/${chat.id}/calls`));
+      
+      unsubscribes.push(unsub);
+    });
+
+    return () => {
+      unsubscribes.forEach(unsub => unsub());
+      if (callAudioRef.current) {
+        callAudioRef.current.pause();
+        callAudioRef.current.currentTime = 0;
+        callAudioRef.current = null;
+      }
+    };
+  }, [activeChild, chats, playCallSound]);
+
+  useEffect(() => {
+    // Fetch online statuses for all children
+    const unsubscribe = onSnapshot(collection(db, 'online_status'), (snapshot) => {
+      const statuses: Record<string, OnlineStatus> = {};
+      snapshot.docs.forEach(doc => {
+        statuses[doc.id] = doc.data() as OnlineStatus;
+      });
+      setOnlineStatuses(statuses);
+    }, (err) => handleFirestoreError(err, OperationType.GET, 'online_status'));
+
+    return () => unsubscribe();
+  }, []);
+
+  const getStatusText = (uid: string) => {
+    const status = onlineStatuses[uid];
+    if (!status) return 'غير متصل';
+    
+    // Consider online if active in the last 2 minutes
+    const isOnline = status.isOnline && (Date.now() - status.lastActive < 2 * 60 * 1000);
+    
+    if (isOnline) return 'نشط الآن';
+    
+    const diffInMinutes = Math.floor((Date.now() - status.lastActive) / 60000);
+    if (diffInMinutes < 60) return `آخر ظهور منذ ${diffInMinutes} دقيقة`;
+    
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `آخر ظهور منذ ${diffInHours} ساعة`;
+    
+    const diffInDays = Math.floor(diffInHours / 24);
+    return `آخر ظهور منذ ${diffInDays} يوم`;
+  };
+
+  useEffect(() => {
+    const childStr = localStorage.getItem('active_child');
+    if (!childStr) {
+      navigate('/');
+      return;
+    }
+    const child = JSON.parse(childStr) as ChildProfile;
+    setActiveChild(child);
+    setCustomStatusInput(child.customStatus || '');
+
+    // Fetch all children
+    const unsubscribeChildren = onSnapshot(collection(db, 'children_profiles'), (snapshot) => {
+      const children = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as ChildProfile));
+      setAllChildren(children.filter(c => c.uid !== child.uid && c.status === 'approved'));
+    }, (err) => handleFirestoreError(err, OperationType.GET, 'children_profiles'));
+
+    // Fetch friend requests
+    const qRequests = query(collection(db, 'friend_requests'));
+    const unsubscribeRequests = onSnapshot(qRequests, (snapshot) => {
+      const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as FriendRequest));
+      const myRequests = requests.filter(r => r.fromId === child.uid || r.toId === child.uid);
+      setFriendRequests(myRequests);
+    }, (err) => handleFirestoreError(err, OperationType.GET, 'friend_requests'));
+
+    // Fetch chats
+    const qChats = query(collection(db, 'chats'), where('participants', 'array-contains', child.uid));
+    const unsubscribeChats = onSnapshot(qChats, (snapshot) => {
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'modified' || change.type === 'added') {
+          const chatData = change.doc.data() as ChatSession;
+          const lastMsg = chatData.lastMessage;
+          const readBy = (chatData as any).readBy || [];
+          if (lastMsg && lastMsg.senderId !== child.uid && !readBy.includes(child.uid)) {
+            // Only play sound if it's a recent message (within last 10 seconds) to avoid playing on initial load for old unread messages
+            if (Date.now() - lastMsg.timestamp < 10000) {
+              playMessageSound();
+            }
+          }
+        }
+      });
+
+      const fetchedChats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatSession));
+      setChats(fetchedChats.sort((a, b) => b.updatedAt - a.updatedAt));
+    }, (err) => handleFirestoreError(err, OperationType.GET, 'chats'));
+
+    return () => {
+      unsubscribeChildren();
+      unsubscribeRequests();
+      unsubscribeChats();
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, [navigate, playMessageSound]);
+
+  useEffect(() => {
+    if (!activeChild || !allChildren.length) return;
+    const acceptedIds = new Set<string>();
+    friendRequests.forEach(req => {
+      if (req.status === 'accepted') {
+        if (req.fromId === activeChild.uid) acceptedIds.add(req.toId);
+        if (req.toId === activeChild.uid) acceptedIds.add(req.fromId);
+      }
+    });
+    setFriends(allChildren.filter(c => acceptedIds.has(c.uid)));
+  }, [friendRequests, activeChild, allChildren]);
+
+  useEffect(() => {
+    if (!activeChild || !activeChat) return;
+
+    let chatId = '';
+    if (isChatSession(activeChat)) {
+      chatId = activeChat.id;
+    } else {
+      chatId = [activeChild.uid, activeChat.uid].sort().join('_');
+    }
+
+    const qMessages = query(
+      collection(db, 'direct_messages'),
+      where('chatId', '==', chatId),
+      orderBy('timestamp', 'desc'),
+      limit(messageLimit)
+    );
+
+    const unsubscribeMessages = onSnapshot(qMessages, (snapshot) => {
+      const fetchedMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DirectMessage));
+      // Reverse to show oldest at top, newest at bottom
+      setMessages(fetchedMessages.reverse());
+      
+      // Mark as read
+      const unreadMessages = fetchedMessages.filter(m => m.senderId !== activeChild.uid && (!m.readBy || !m.readBy.includes(activeChild.uid)));
+      
+      if (unreadMessages.length > 0) {
+        unreadMessages.forEach(async (msg) => {
+          try {
+            await updateDoc(doc(db, 'direct_messages', msg.id), {
+              readBy: arrayUnion(activeChild.uid)
+            });
+          } catch (e) {
+            console.error("Error marking read", e);
+          }
+        });
+
+        // Also mark the chat as read
+        updateDoc(doc(db, 'chats', chatId), {
+          readBy: arrayUnion(activeChild.uid)
+        }).catch(e => {
+          console.error("Error marking chat read", e);
+        });
+      }
+
+      // Only scroll to bottom if we are near the bottom or it's initial load
+      if (chatContainerRef.current) {
+        const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+        const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
+        if (isNearBottom || fetchedMessages.length <= 50) {
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }, 100);
+        }
+      }
+    }, (err) => handleFirestoreError(err, OperationType.GET, 'direct_messages'));
+
+    return () => unsubscribeMessages();
+  }, [activeChat, activeChild, messageLimit]);
+
+  useEffect(() => {
+    return () => {
+      if (activeChild && activeChat) {
+        let chatId = '';
+        if (isChatSession(activeChat)) {
+          chatId = activeChat.id;
+        } else {
+          chatId = [activeChild.uid, activeChat.uid].sort().join('_');
+        }
+        setDoc(doc(db, 'chats', chatId), { typing: arrayRemove(activeChild.uid) }, { merge: true }).catch(() => {});
+      }
+    };
+  }, [activeChild, activeChat]);
+
+  if (!activeChild) return null;
+
+  const handleSendRequest = async (toChild: ChildProfile) => {
+    try {
+      await addDoc(collection(db, 'friend_requests'), {
+        fromId: activeChild.uid,
+        fromName: activeChild.name,
+        fromHeroName: activeChild.heroName,
+        toId: toChild.uid,
+        toName: toChild.name,
+        status: 'pending',
+        timestamp: Date.now()
+      });
+      toast.success(`تم إرسال طلب الصداقة إلى ${toChild.name}!`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'friend_requests');
+    }
+  };
+
+  const handleAcceptRequest = async (requestId: string) => {
+    try {
+      await updateDoc(doc(db, 'friend_requests', requestId), { status: 'accepted' });
+      toast.success('تم قبول طلب الصداقة!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'friend_requests');
+    }
+  };
+
+  const handleDeclineRequest = async (requestId: string) => {
+    try {
+      await updateDoc(doc(db, 'friend_requests', requestId), { status: 'declined' });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'friend_requests');
+    }
+  };
+
+  const sendMessage = async (text: string, type: 'text' | 'image' | 'voice' | 'system' = 'text', mediaUrl?: string) => {
+    if (!activeChat) return;
+    
+    let chatId = '';
+    let participants: string[] = [];
+    let chatType: 'direct' | 'group' = 'direct';
+
+    if (isChatSession(activeChat) && activeChat.type === 'group') {
+      chatId = activeChat.id;
+      participants = activeChat.participants;
+      chatType = 'group';
+    } else {
+      const otherId = isChatSession(activeChat) 
+        ? activeChat.participants.find(p => p !== activeChild.uid) 
+        : activeChat.uid;
+      
+      if (!otherId) return;
+      
+      chatId = [activeChild.uid, otherId].sort().join('_');
+      participants = [activeChild.uid, otherId];
+    }
+
+    const now = Date.now();
+
+    const messageData: any = {
+      chatId,
+      senderId: activeChild.uid,
+      senderName: activeChild.name,
+      text,
+      type,
+      timestamp: now,
+      readBy: [activeChild.uid]
+    };
+
+    if (mediaUrl) {
+      if (type === 'image') messageData.imageUrl = mediaUrl;
+      if (type === 'voice') messageData.voiceUrl = mediaUrl;
+    }
+
+    if (replyingTo) {
+      messageData.replyTo = replyingTo.id;
+    }
+
+    try {
+      await addDoc(collection(db, 'direct_messages'), messageData);
+      
+      const chatUpdateData: any = {
+        participants,
+        lastMessage: {
+          text: type === 'text' ? text : type === 'image' ? 'أرسل صورة 📷' : type === 'voice' ? 'أرسل تسجيلاً صوتياً 🎤' : text,
+          timestamp: now,
+          senderId: activeChild.uid,
+          type
+        },
+        updatedAt: now,
+        type: chatType
+      };
+
+      if (isChatSession(activeChat) && activeChat.type === 'group') {
+        chatUpdateData.name = activeChat.name;
+        chatUpdateData.admins = activeChat.admins;
+        chatUpdateData.createdBy = activeChat.createdBy;
+      }
+
+      await setDoc(doc(db, 'chats', chatId), chatUpdateData, { merge: true });
+
+      setNewMessage('');
+      setReplyingTo(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'direct_messages');
+    }
+  };
+
+  const handleStartCall = async (type: 'audio' | 'video') => {
+    if (!activeChild || !activeChat) return;
+    
+    // Prevent starting a new call if already in one or receiving one
+    if (activeCall || incomingCall) {
+      toast.error('أنت في مكالمة بالفعل');
+      return;
+    }
+
+    try {
+      // Check if the other user is already in a call (Busy state)
+      // Since we are using path-based isolation, we can only check if they are busy in the current chat
+      const otherId = isChatSession(activeChat) 
+        ? activeChat.participants.find(p => p !== activeChild.uid) 
+        : activeChat.uid;
+        
+      if (!otherId) return;
+
+      const chatId = [activeChild.uid, otherId].sort().join('_');
+      const qCalls = query(
+        collection(db, 'chats', chatId, 'calls'),
+        where('calleeId', '==', otherId),
+        where('status', 'in', ['ringing', 'accepted', 'connected'])
+      );
+      const activeCallsSnapshot = await getDocs(qCalls);
+      
+      if (!activeCallsSnapshot.empty) {
+        toast.error('الخط مشغول حالياً');
+        return;
+      }
+
+      const callDoc = await addDoc(collection(db, 'chats', chatId, 'calls'), {
+        chatId,
+        callerId: activeChild.uid,
+        callerName: activeChild.name,
+        callerAvatar: activeChild.avatar || null,
+        calleeId: otherId,
+        type,
+        status: 'ringing',
+        createdAt: Date.now()
+      });
+      
+      setActiveCall({
+        id: callDoc.id,
+        chatId,
+        callerId: activeChild.uid,
+        callerName: activeChild.name,
+        callerAvatar: activeChild.avatar,
+        calleeId: otherId,
+        type,
+        status: 'ringing',
+        createdAt: Date.now()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'calls');
+      toast.error('حدث خطأ أثناء بدء المكالمة');
+    }
+  };
+
+  const handleAcceptCall = async () => {
+    if (!incomingCall) return;
+    try {
+      await updateDoc(doc(db, 'chats', incomingCall.chatId, 'calls', incomingCall.id), {
+        status: 'accepted',
+        acceptedAt: Date.now()
+      });
+      setActiveCall({ ...incomingCall, status: 'accepted' });
+      setIncomingCall(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${incomingCall.chatId}/calls/${incomingCall.id}`);
+    }
+  };
+
+  const handleRejectCall = async () => {
+    if (!incomingCall) return;
+    try {
+      await updateDoc(doc(db, 'chats', incomingCall.chatId, 'calls', incomingCall.id), {
+        status: 'rejected',
+        endedAt: Date.now()
+      });
+      setIncomingCall(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `chats/${incomingCall.chatId}/calls/${incomingCall.id}`);
+    }
+  };
+
+  const handleEndCall = () => {
+    setActiveCall(null);
+  };
+
+  const handleSendMessage = () => {
+    if (!newMessage.trim()) return;
+    sendMessage(newMessage.trim(), 'text');
+  };
+
+  const handleTyping = () => {
+    if (!activeChat || !activeChild) return;
+    
+    let chatId = '';
+    if (isChatSession(activeChat)) {
+      chatId = activeChat.id;
+    } else {
+      chatId = [activeChild.uid, activeChat.uid].sort().join('_');
+    }
+    
+    const chatRef = doc(db, 'chats', chatId);
+    setDoc(chatRef, { typing: arrayUnion(activeChild.uid) }, { merge: true }).catch(() => {});
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      setDoc(chatRef, { typing: arrayRemove(activeChild.uid) }, { merge: true }).catch(() => {});
+    }, 2000);
+  };
+
+  const handleReact = async (messageId: string, emoji: string) => {
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+
+    const currentReactions = msg.reactions || {};
+    const usersWhoReactedWithEmoji = currentReactions[emoji] || [];
+    
+    let newReactions = { ...currentReactions };
+    
+    if (usersWhoReactedWithEmoji.includes(activeChild.uid)) {
+      newReactions[emoji] = usersWhoReactedWithEmoji.filter(id => id !== activeChild.uid);
+      if (newReactions[emoji].length === 0) delete newReactions[emoji];
+    } else {
+      newReactions[emoji] = [...usersWhoReactedWithEmoji, activeChild.uid];
+    }
+
+    try {
+      await updateDoc(doc(db, 'direct_messages', messageId), { reactions: newReactions });
+      setShowEmojiPicker(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'direct_messages');
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (window.confirm('هل أنت متأكد من حذف هذه الرسالة؟')) {
+      try {
+        await updateDoc(doc(db, 'direct_messages', messageId), {
+          text: 'تم حذف هذه الرسالة',
+          type: 'system',
+          imageUrl: null,
+          voiceUrl: null
+        });
+        toast.success('تم حذف الرسالة');
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, 'direct_messages');
+        toast.error('حدث خطأ أثناء الحذف');
+      }
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeChild || !activeChat) return;
+
+    setIsUploading(true);
+    try {
+      // Create a reference to the file in Firebase Storage
+      const fileExtension = file.name.split('.').pop() || 'jpg';
+      const fileName = `chat_images/${activeChild.uid}_${Date.now()}.${fileExtension}`;
+      const storageRef = ref(storage, fileName);
+
+      // Upload the file
+      await uploadBytes(storageRef, file);
+
+      // Get the download URL
+      const downloadURL = await getDownloadURL(storageRef);
+
+
       // Send the message with the image URL
       await sendMessage('صورة', 'image', downloadURL);
     } catch (error) {
