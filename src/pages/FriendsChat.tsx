@@ -73,7 +73,8 @@ export default function FriendsChat() {
   const [onlineStatuses, setOnlineStatuses] = useState<Record<string, OnlineStatus>>({});
   const [activeCall, setActiveCall] = useState<CallSession | null>(null);
   const [incomingCall, setIncomingCall] = useState<CallSession | null>(null);
-
+  const [isDialing, setIsDialing] = useState(false);
+  
   const { playMessageSound, playCallSound } = useNotifications(activeChild?.uid);
   const callAudioRef = useRef<HTMLAudioElement | null>(null);
 
