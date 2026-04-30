@@ -50,7 +50,7 @@ export default function VillageView() {
         snap.docs.forEach(d => {
           const child = d.data() as ChildProfile;
           children.push(child);
-          const ls = (child.houseConfig as unknown as Record<string, unknown> | undefined)?.liveSession;
+          const ls = (child.houseConfig as Record<string, unknown> | undefined)?.liveSession;
           if (ls) map[child.uid] = ls as HouseSession;
         });
         setAllChildren(children);
@@ -181,17 +181,14 @@ export default function VillageView() {
 
                   {/* Online badge */}
                   {isOnline && (
-                    <span className={`absolute ${hasCall ? 'top-8' : 'top-3'} left-3 w-3 h-3 bg-emerald-400 rounded-full shadow-lg shadow-emerald-400/50 animate-pulse transition-all`} />
+                    <span className="absolute top-3 left-3 w-3 h-3 bg-emerald-400 rounded-full shadow-lg shadow-emerald-400/50 animate-pulse" />
                   )}
 
-                  {/* Active call badge — animated, full-width strip at the top */}
+                  {/* Active call badge */}
                   {hasCall && (
-                    <div className="absolute top-0 inset-x-0 rounded-t-[1.75rem] overflow-hidden pointer-events-none z-10">
-                      <div className="bg-gradient-to-r from-red-500 via-rose-500 to-red-500 text-white text-[10px] font-black px-2 py-1 flex items-center justify-center gap-1 animate-pulse">
-                        <Video className="w-2.5 h-2.5 flex-shrink-0" />
-                        <span>مكالمة نشطة الآن!</span>
-                      </div>
-                    </div>
+                    <span className="absolute top-3 left-7 bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                      <Video className="w-2.5 h-2.5" /> لايف
+                    </span>
                   )}
 
                   {/* Visitor count */}
