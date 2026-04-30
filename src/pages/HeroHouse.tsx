@@ -230,10 +230,9 @@ export default function HeroHouse() {
   const [houseSession, setHouseSession] = useState<HouseSession | null>(null);
   const [houseMessages, setHouseMessages] = useState<HouseMessage[]>([]);
   const [showCall, setShowCall] = useState(false);
-  const [callMinimized, setCallMinimized] = useState(false);
-  const [showActionBar, setShowActionBar] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [showGamePicker, setShowGamePicker] = useState(false);
+  const [showActionBar, setShowActionBar] = useState(true);
   const [friends, setFriends] = useState<ChildProfile[]>([]);
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
   const [inviteSending, setInviteSending] = useState(false);
@@ -325,7 +324,7 @@ export default function HeroHouse() {
     const unsubSession = onSnapshot(hostRef, snap => {
       if (snap.exists()) {
         const data = snap.data() as ChildProfile;
-        const ls = (data.houseConfig as unknown as Record<string, unknown>)?.liveSession;
+        const ls = (data.houseConfig as Record<string, unknown>)?.liveSession;
         if (ls) setHouseSession(ls as HouseSession);
       }
     }, () => {});
@@ -746,23 +745,17 @@ export default function HeroHouse() {
     }).catch(() => {});
     if (newState) {
       setShowCall(true);
-      setCallMinimized(false);
     } else {
       setShowCall(false);
-      setCallMinimized(false);
     }
   };
 
-  const handleJoinCall = () => {
-    setShowCall(true);
-    setCallMinimized(false);
-  };
+  const handleJoinCall = () => setShowCall(true);
 
   const handleLeaveCall = () => {
     setShowCall(false);
-    setCallMinimized(false);
-    if (isHost && hostProfile) {
-      updateDoc(doc(db, 'children_profiles', hostProfile.uid), {
+    if (isHost) {
+      updateDoc(doc(db, 'children_profiles', hostProfile!.uid), {
         'houseConfig.liveSession.callActive': false,
         'houseConfig.liveSession.updatedAt': Date.now()
       }).catch(() => {});
@@ -1573,22 +1566,22 @@ export default function HeroHouse() {
         </div>
       )}
 
-      {/* ── ACTION BAR (bottom center) + hide/show toggle ── */}
+      {/* ── ACTION BAR (bottom center) + toggle ── */}
       {!isEditing && !showWardrobe && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto flex flex-col items-center gap-1.5">
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto flex flex-col items-center gap-2">
+          {/* Toggle pill */}
           <button
             onClick={() => setShowActionBar(p => !p)}
-            className="text-[10px] font-black px-3 py-1 rounded-full shadow bg-white/80 backdrop-blur-md text-slate-500 border border-white/60 hover:bg-white transition-colors"
+            className="bg-white/80 backdrop-blur-md text-slate-500 text-[10px] font-black px-3 py-1 rounded-full shadow border border-white hover:bg-white transition-colors"
           >
             {showActionBar ? '▼ إخفاء الأزرار' : '▲ إظهار الأزرار'}
           </button>
           <AnimatePresence>
             {showActionBar && (
               <motion.div
-                initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                exit={{ opacity: 0, y: 10, scale: 0.95 }}
                 className="bg-white/93 backdrop-blur-xl px-4 py-3 rounded-[2rem] shadow-2xl border-4 border-white flex gap-2 items-center"
               >
                 {[
@@ -1748,7 +1741,7 @@ export default function HeroHouse() {
         ) : null;
       })()}
 
-      {/* ── IN-PAGE JITSI CALL (with minimize/PiP support) ── */}
+      {/* ── IN-PAGE JITSI CALL ── */}
       <AnimatePresence>
         {showCall && hostProfile && activeChild && (
           <JitsiCallEmbed
@@ -1758,9 +1751,6 @@ export default function HeroHouse() {
             callType="video"
             title={`مكالمة بيت ${hostProfile.heroName || hostProfile.name}`}
             compact
-            minimized={callMinimized}
-            onMinimize={() => setCallMinimized(true)}
-            onExpand={() => setCallMinimized(false)}
             onClose={handleLeaveCall}
           />
         )}
