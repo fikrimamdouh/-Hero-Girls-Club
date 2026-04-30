@@ -240,6 +240,10 @@ export interface DirectMessage {
   text: string;
   timestamp: number;
   readBy?: string[];
+  deliveredTo?: string[];
+  seenBy?: string[];
+  status?: 'sent' | 'delivered' | 'seen';
+  messageType?: 'text' | 'image' | 'voice' | 'system' | 'assistant';
   reactions?: Record<string, string[]>; // emoji -> array of uids
   replyTo?: string; // messageId
   imageUrl?: string;
@@ -266,6 +270,12 @@ export interface ChatSession {
   theme?: string; // e.g., 'default', 'love', 'ocean', 'night'
   typing?: string[]; // Array of uids currently typing
   readBy?: string[]; // Array of uids who have read the latest message
+}
+
+export interface AssistantMessage extends DirectMessage {
+  targetChildId?: string;
+  targetName?: string;
+  copiedToAdmin?: boolean;
 }
 
 export interface CallSession {
