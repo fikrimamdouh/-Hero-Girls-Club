@@ -69,7 +69,11 @@ Set these as secrets in the Replit environment:
 - **Action bar**: 10 fun social actions (tea, music, dance, heart, etc.)
 - **Chat widget**: real-time chat for visit sessions
 - **Tic-tac-toe** game for social visits
-- **Data model**: furniture stored in `houseConfig.rooms.{roomId}.furniture` in children_profiles Firestore document
+- **Data model**:
+  - Room data (furniture, wallpaper, floor) saved to `children_profiles/{hostUid}.houseConfig.rooms.{roomId}.*`
+  - Avatar/wardrobe data saved to `children_profiles/{activeChildUid}.avatar`
+  - Note: legacy `houseConfig.{furniture,theme,wallpaper,floor}` fields are preserved for backward compat; new code reads exclusively from `houseConfig.rooms.*`
+  - Profiles without `houseConfig.rooms` fall back to room-specific CSS defaults automatically
 
 ## Replit Migration Notes
 
