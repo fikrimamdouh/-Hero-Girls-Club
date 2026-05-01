@@ -19,6 +19,15 @@ const smartLocalChat = (assistantName: string, childName: string, msg: string): 
 
   const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
 
+  if (IMAGE_TRIGGERS.test(m)) {
+    const art = isReena
+      ? `${greet}\nرائع! أنا أحب الرسم والألوان كثيراً! 🎨✨\n\nها هي صورتك الجميلة 👇\n(قد تستغرق ثواني للظهور)`
+      : isMalik
+      ? `${greet}\nمهمة الرسم بدأت! 🛡️🎨\n\nها أنا أرسم لك الآن...\nستظهر صورتك في لحظات! ⚡`
+      : `${greet}\nفكرة جميلة! 📘🎨\n\nجاري إنشاء الصورة خطوة بخطوة...\nستظهر قريباً! ✅`;
+    return art;
+  }
+
   if (/مرحب|هاي|أهلا|اهلا|كيف حال|صباح|مساء|هلا/i.test(m)) {
     return pick([
       `${greet}\nيسعدني أشوفك اليوم! أنا جاهز أساعدك في أي حاجة 🎉\nهل عندك واجب تريدين مساعدة فيه؟ أو فكرة تودين استكشافها؟`,
@@ -98,6 +107,41 @@ const smartLocalChat = (assistantName: string, childName: string, msg: string): 
   ]);
 };
 
+const IMAGE_TRIGGERS = /ارسم|صور|رسم|صورة|رسمة|ارسملي|صورلي|أرسم|صوّر|شكل|لوحة|رسومة/i;
+
+const buildImagePrompt = (msg: string): string | null => {
+  if (!IMAGE_TRIGGERS.test(msg)) return null;
+  const m = msg.toLowerCase();
+  if (/قطة|قطط|كيتي/i.test(m)) return "cute cartoon cat for children colorful kawaii style";
+  if (/كلب|جرو/i.test(m)) return "cute cartoon puppy dog for children colorful kawaii style";
+  if (/أسد|سبع|ليث/i.test(m)) return "cute cartoon lion for children colorful kawaii";
+  if (/ديناصور|دينصور/i.test(m)) return "cute friendly cartoon dinosaur for children colorful";
+  if (/أرنب|ارنب/i.test(m)) return "cute cartoon rabbit bunny for children colorful kawaii";
+  if (/فراشة|فراشات/i.test(m)) return "beautiful colorful butterfly cartoon for children";
+  if (/سمكة|أسماك|سمك/i.test(m)) return "cute colorful cartoon fish underwater for children";
+  if (/طائر|عصفور|طيور/i.test(m)) return "cute colorful cartoon bird for children kawaii";
+  if (/حيوان/i.test(m)) return "cute colorful cartoon animals for children kawaii style";
+  if (/فضاء|كوكب|نجوم|نجمة|مجرة/i.test(m)) return "colorful space planets stars cartoon for children educational";
+  if (/قمر/i.test(m)) return "cute cartoon moon and stars for children colorful";
+  if (/شمس/i.test(m)) return "cute cartoon smiling sun for children colorful";
+  if (/زهرة|وردة|زهور/i.test(m)) return "beautiful colorful cartoon flowers for children";
+  if (/شجرة|غابة/i.test(m)) return "colorful cartoon tree forest for children kawaii";
+  if (/بحر|موج|شاطئ/i.test(m)) return "colorful cartoon ocean beach for children";
+  if (/قوس قزح|ألوان/i.test(m)) return "colorful rainbow cartoon for children cheerful";
+  if (/مدينة|منزل|بيت/i.test(m)) return "colorful cartoon town houses for children kawaii";
+  if (/أميرة|ملكة|حورية/i.test(m)) return "cute cartoon princess for children colorful fantasy";
+  if (/بطل|سوبر|خارق/i.test(m)) return "cute cartoon superhero girl for children colorful";
+  if (/تنين/i.test(m)) return "cute friendly cartoon dragon for children colorful kawaii";
+  if (/قلعة|قصر/i.test(m)) return "colorful cartoon castle for children fantasy kawaii";
+  if (/مبهج|جميل|حلو|مفرح/i.test(m)) return "cheerful colorful cartoon illustration for children happy";
+  return "cute colorful cartoon illustration for children happy kawaii style";
+};
+
+const makePollinationsUrl = (prompt: string): string => {
+  const seed = Math.floor(Math.random() * 9999999);
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&seed=${seed}&nologo=true&model=flux`;
+};
+
 export default function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -109,5 +153,11 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     chatHistory?.[chatHistory.length - 1]?.text || ''
   );
 
-  return res.status(200).json({ text: smartLocalChat(assistantName, childName, lastMessage) });
+  const imgPrompt = buildImagePrompt(lastMessage);
+  const imageUrl = imgPrompt ? makePollinationsUrl(imgPrompt) : undefined;
+
+  return res.status(200).json({
+    text: smartLocalChat(assistantName, childName, lastMessage),
+    ...(imageUrl ? { imageUrl } : {})
+  });
 }
