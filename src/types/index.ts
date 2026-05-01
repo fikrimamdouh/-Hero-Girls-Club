@@ -132,11 +132,14 @@ export interface Badge {
 
 export interface FeatureIdea {
   id: string;
-  childId: string;
-  childName: string;
-  idea: string;
+  childId?: string;
+  childName?: string;
+  idea?: string;
+  description?: string;
+  title?: string;
   createdAt: number;
-  status: 'new' | 'read' | 'implemented';
+  status: 'new' | 'read' | 'implemented' | 'pending';
+  source?: 'child' | 'parent';
 }
 
 export interface ActivityLog {
