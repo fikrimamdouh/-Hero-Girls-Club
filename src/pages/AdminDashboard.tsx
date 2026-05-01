@@ -508,7 +508,14 @@ export default function AdminDashboard() {
                   <motion.div key={idea.id} className={`p-6 rounded-2xl border-2 ${idea.status === 'new' ? 'border-purple-400 bg-purple-50' : 'border-slate-200 bg-white'}`}>
                     <div className="flex justify-between items-start mb-4">
                       <div>
-                        <h3 className="font-bold text-lg text-slate-800">{idea.childName}</h3>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-bold text-lg text-slate-800">
+                            {idea.childName || idea.title || 'مجهول'}
+                          </h3>
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${idea.source === 'child' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {idea.source === 'child' ? '⭐ بطلة' : '👨‍👩‍👧 ولي أمر'}
+                          </span>
+                        </div>
                         <p className="text-sm text-slate-500">{new Date(idea.createdAt).toLocaleString('ar-EG')}</p>
                       </div>
                       <div className="flex gap-2">
@@ -544,7 +551,7 @@ export default function AdminDashboard() {
                         </button>
                       </div>
                     </div>
-                    <p className="text-slate-700 text-lg whitespace-pre-wrap">{idea.idea}</p>
+                    <p className="text-slate-700 text-lg whitespace-pre-wrap">{idea.idea || idea.description || '—'}</p>
                   </motion.div>
                 ))}
                 {ideas.length === 0 && (
