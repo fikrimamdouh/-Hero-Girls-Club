@@ -24,7 +24,7 @@ export default function IdeaChatbot() {
   const activeChild = activeChildStr ? JSON.parse(activeChildStr) as ChildProfile : null;
   const activeAssistant = assistants.find(a => a.id === activeAssistantId) || assistants[0];
 
-  const [messages, setMessages] = useState<{role: 'user'|'model', text: string}[]>([]);
+  const [messages, setMessages] = useState<{role: 'user'|'model', text: string, imageUrl?: string}[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -118,7 +118,7 @@ export default function IdeaChatbot() {
       const botReply = data.text;
       if (!botReply) throw new Error('Empty AI response');
 
-      setMessages(prev => [...prev, { role: 'model', text: botReply }]);
+      setMessages(prev => [...prev, { role: 'model', text: botReply, imageUrl: data.imageUrl || undefined }]);
 
       try {
         await Promise.all([
@@ -211,16 +211,47 @@ export default function IdeaChatbot() {
               ))}
             </div>
 
+            {/* Quick Actions */}
+            <div className="bg-white border-b border-purple-50 px-3 py-2 flex gap-2 overflow-x-auto">
+              {[
+                { emoji: '🎨', label: 'ارسم لي', prompt: 'ارسم لي صورة جميلة ومبهجة' },
+                { emoji: '📖', label: 'قصة', prompt: 'احكي لي قصة مسلية قصيرة' },
+                { emoji: '🧩', label: 'لغز', prompt: 'هاتي لي لغزاً ممتعاً أو أحجية' },
+                { emoji: '✨', label: 'مدحني', prompt: 'قولي حاجة حلوة وشجعيني' },
+                { emoji: '🦁', label: 'حيوان', prompt: 'ارسم لي حيوان كرتون لطيف' },
+                { emoji: '🚀', label: 'فضاء', prompt: 'ارسم لي صورة فضاء وكواكب ملونة' },
+              ].map(q => (
+                <button
+                  key={q.label}
+                  onClick={() => { setInput(q.prompt); }}
+                  className="flex items-center gap-1 px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-full text-xs font-bold whitespace-nowrap transition-colors border border-purple-100"
+                >
+                  <span>{q.emoji}</span><span>{q.label}</span>
+                </button>
+              ))}
+            </div>
+
             {/* Messages */}
-            <div className="h-80 overflow-y-auto p-4 space-y-4 bg-slate-50">
+            <div className="h-72 overflow-y-auto p-4 space-y-4 bg-slate-50">
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] p-3 rounded-2xl ${
+                  <div className={`max-w-[80%] rounded-2xl overflow-hidden ${
                     msg.role === 'user'
                       ? 'bg-purple-500 text-white rounded-tl-none'
                       : 'bg-white border border-purple-100 text-slate-700 rounded-tr-none shadow-sm'
                   }`}>
-                    <p className="text-sm leading-relaxed">{msg.text}</p>
+                    {msg.imageUrl && (
+                      <div className="p-2">
+                        <img
+                          src={msg.imageUrl}
+                          alt="صورة مولّدة"
+                          className="rounded-xl w-full max-w-[220px] object-cover border border-purple-100"
+                          loading="lazy"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      </div>
+                    )}
+                    <p className="text-sm leading-relaxed p-3 pt-1 whitespace-pre-line">{msg.text}</p>
                   </div>
                 </div>
               ))}
@@ -243,7 +274,7 @@ export default function IdeaChatbot() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                placeholder="اكتب فكرتك هنا..."
+                placeholder="اكتبي أو اختاري نشاطاً..."
                 className="flex-1 bg-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
               />
               <button
