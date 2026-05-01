@@ -250,14 +250,8 @@ export default function ChildDashboard() {
     }
   };
 
-  useEffect(() => {
-    if (profile && !dailyQuest) {
-      handleGetQuest();
-    }
-  }, [profile]);
-
   const handleGetQuest = async () => {
-    if (!profile) return;
+    if (!profile || loadingQuest) return;
     setLoadingQuest(true);
     try {
       const quest = await generateDailyQuest(profile.heroName || profile.name);
