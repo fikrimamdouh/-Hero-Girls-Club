@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue } from 'motion/react';
-import { X, Send, Shield, EyeOff, Eye } from 'lucide-react';
+import { X, Send, Shield, EyeOff, Eye, Trash2 } from 'lucide-react';
 import { db } from '../firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, deleteDoc, doc } from 'firebase/firestore';
 import { ChildProfile } from '../types';
 
 function getSavedPos() {
@@ -10,26 +10,56 @@ function getSavedPos() {
   catch { return { x: 0, y: 0 }; }
 }
 
+type Message = { role: 'user' | 'model'; text: string; imageUrl?: string };
+
+const MAX_SAVED = 40;
+
+function historyKey(childId: string, assistantId: string) {
+  return `chat_history_${childId}_${assistantId}`;
+}
+
+function loadHistory(childId: string, assistantId: string): Message[] {
+  try {
+    const raw = localStorage.getItem(historyKey(childId, assistantId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Message[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function saveHistory(childId: string, assistantId: string, messages: Message[]) {
+  try {
+    const trimmed = messages.slice(-MAX_SAVED);
+    localStorage.setItem(historyKey(childId, assistantId), JSON.stringify(trimmed));
+  } catch { /* non-critical */ }
+}
+
+function clearHistory(childId: string, assistantId: string) {
+  localStorage.removeItem(historyKey(childId, assistantId));
+}
+
 export default function IdeaChatbot() {
   const assistants = [
     { id: 'malek', name: 'البطل مالك', emoji: '🛡️', vibe: 'الشجاعة، الحماس، والمغامرات الذكية', color: 'from-blue-500 to-indigo-600' },
-    { id: 'RINA', name: 'رينا الخيالية', emoji: '💡', vibe: 'الإبداع، الرسم، والقصص السحرية', color: 'from-pink-500 to-fuchsia-600' },
-    { id: 'maria', name: 'ماريا الذكية', emoji: '📘', vibe: 'التنظيم، الترتيب، والخطوات العملية', color: 'from-emerald-500 to-teal-600' }
+    { id: 'RINA', name: 'رينا الحكيمة', emoji: '🌙', vibe: 'الهدوء، الحكمة، والتفكير العميق', color: 'from-pink-500 to-fuchsia-600' },
+    { id: 'maria', name: 'ماريا المرحة', emoji: '😄', vibe: 'الضحك والفرفشة وخفة الدم', color: 'from-emerald-500 to-teal-600' }
   ] as const;
 
   const [isOpen, setIsOpen] = useState(false);
   const [isHidden, setIsHidden] = useState(() => localStorage.getItem('chatbot_hidden') === 'true');
   const [activeAssistantId, setActiveAssistantId] = useState<typeof assistants[number]['id']>('malek');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const activeChildStr = localStorage.getItem('active_child');
   const activeChild = activeChildStr ? JSON.parse(activeChildStr) as ChildProfile : null;
   const activeAssistant = assistants.find(a => a.id === activeAssistantId) || assistants[0];
 
-  const [messages, setMessages] = useState<{role: 'user'|'model', text: string, imageUrl?: string}[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  /* ── Draggable position ── */
   const saved = getSavedPos();
   const dragX = useMotionValue(saved.x);
   const dragY = useMotionValue(saved.y);
@@ -49,28 +79,24 @@ export default function IdeaChatbot() {
     localStorage.setItem('chatbot_hidden', 'false');
   };
 
-  useEffect(() => {
-    if (activeChild && messages.length === 0) {
-      const heroName = activeChild.heroName || activeChild.name || 'بطلتنا';
-      setMessages([
-        {
-          role: 'model',
-          text: `أهلاً بكِ يا بطلة ${heroName}! 🌟 أنا "${activeAssistant.name}" ${activeAssistant.emoji}، جاهزة أسمع أفكارك السحرية للموقع!`
-        }
-      ]);
-    }
-  }, [activeChild, activeAssistant.name, activeAssistant.emoji, messages.length]);
+  const makeWelcome = useCallback((assistant: typeof assistants[number]): Message => {
+    const heroName = activeChild?.heroName || activeChild?.name || 'بطلتنا';
+    return {
+      role: 'model',
+      text: `أهلاً يا ${heroName}! أنا ${assistant.name} ${assistant.emoji}\n${assistant.vibe}.\nأنا هنا معكِ — ابدأي متى تريدين! 🌟`
+    };
+  }, [activeChild]);
 
   useEffect(() => {
     if (!activeChild) return;
-    const heroName = activeChild.heroName || activeChild.name || 'بطلتنا';
-    setMessages([
-      {
-        role: 'model',
-        text: `أنا ${activeAssistant.name} ${activeAssistant.emoji}، وطريقتي هي ${activeAssistant.vibe}. شاركيني فكرتك يا ${heroName}!`
-      }
-    ]);
-  }, [activeAssistantId]);
+    const history = loadHistory(activeChild.uid, activeAssistantId);
+    if (history.length > 0) {
+      setMessages(history);
+    } else {
+      setMessages([makeWelcome(activeAssistant)]);
+    }
+    setShowDeleteConfirm(false);
+  }, [activeAssistantId, activeChild?.uid]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -78,22 +104,22 @@ export default function IdeaChatbot() {
 
   if (!activeChild) return null;
 
-  const handleSend = async () => {
-    if (!input.trim() || isTyping) return;
+  const heroName = activeChild.heroName || activeChild.name || 'بطلتنا';
 
-    const userMsg = input.trim();
+  const handleSend = async (overrideText?: string) => {
+    const userMsg = (overrideText ?? input).trim();
+    if (!userMsg || isTyping) return;
+
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    const newMessages: Message[] = [...messages, { role: 'user', text: userMsg }];
+    setMessages(newMessages);
     setIsTyping(true);
 
-    const heroName = activeChild.heroName || activeChild.name || 'بطلتنا';
-
     try {
-      const chatHistory = messages.slice(1).map(m => ({
+      const chatHistory = newMessages.slice(1).map(m => ({
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.text
       }));
-      chatHistory.push({ role: 'user', content: userMsg });
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -118,7 +144,11 @@ export default function IdeaChatbot() {
       const botReply = data.text;
       if (!botReply) throw new Error('Empty AI response');
 
-      setMessages(prev => [...prev, { role: 'model', text: botReply, imageUrl: data.imageUrl || undefined }]);
+      const botMsg: Message = { role: 'model', text: botReply, imageUrl: data.imageUrl || undefined };
+      const updated: Message[] = [...newMessages, botMsg];
+      setMessages(updated);
+
+      saveHistory(activeChild.uid, activeAssistantId, updated);
 
       try {
         await Promise.all([
@@ -134,21 +164,38 @@ export default function IdeaChatbot() {
       } catch { /* non-critical */ }
 
     } catch (error: unknown) {
-      const heroName2 = activeChild.heroName || activeChild.name || 'بطلتنا';
       const errorStr = String((error as Error)?.message || error).toLowerCase();
-      let errorMessage = `عذراً يا ${heroName2}، يبدو أن قواي السحرية تحتاج لبعض الراحة. هل يمكنكِ المحاولة مرة أخرى؟ 🪄`;
-      if (errorStr.includes('configured') || errorStr.includes('missing')) {
-        errorMessage = `عذراً يا ${heroName2}، يبدو أن "مفتاح السحر" (API Key) لم يتم تفعيله بشكل صحيح. 🔑`;
-      } else if (errorStr.includes('quota') || errorStr.includes('429')) {
-        errorMessage = `عذراً يا ${heroName2}، المساعد مشغول جداً حالياً! 😅 يرجى المحاولة لاحقاً.`;
+      let errorMessage = `عذراً يا ${heroName}، هل يمكنكِ المحاولة مرة أخرى؟ 🪄`;
+      if (errorStr.includes('quota') || errorStr.includes('429')) {
+        errorMessage = `عذراً يا ${heroName}، المساعد مشغول قليلاً! 😅 جربي بعد ثانية.`;
       }
-      setMessages(prev => [...prev, { role: 'model', text: errorMessage }]);
+      const errMsg: Message = { role: 'model', text: errorMessage };
+      const updated: Message[] = [...newMessages, errMsg];
+      setMessages(updated);
+      saveHistory(activeChild.uid, activeAssistantId, updated);
     } finally {
       setIsTyping(false);
     }
   };
 
-  /* ── When fully hidden: show a tiny restore pill ── */
+  const handleDeleteChat = async () => {
+    setIsDeleting(true);
+    try {
+      clearHistory(activeChild.uid, activeAssistantId);
+
+      const q = query(
+        collection(db, 'idea_chats'),
+        where('childId', '==', activeChild.uid)
+      );
+      const snap = await getDocs(q);
+      await Promise.all(snap.docs.map(d => deleteDoc(doc(db, 'idea_chats', d.id))));
+    } catch { /* non-critical */ }
+
+    setMessages([makeWelcome(activeAssistant)]);
+    setShowDeleteConfirm(false);
+    setIsDeleting(false);
+  };
+
   if (isHidden) {
     return (
       <motion.button
@@ -167,7 +214,6 @@ export default function IdeaChatbot() {
 
   return (
     <>
-      {/* Chat panel — positioned relative to drag button */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -185,6 +231,13 @@ export default function IdeaChatbot() {
                 <h3 className="font-bold text-lg">{activeAssistant.name} {activeAssistant.emoji}</h3>
               </div>
               <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  title="حذف المحادثة"
+                  className="hover:bg-white/20 p-1.5 rounded-full transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
                 <button onClick={handleHide} title="إخفاء المساعد" className="hover:bg-white/20 p-1 rounded-full transition-colors">
                   <EyeOff className="w-4 h-4" />
                 </button>
@@ -193,6 +246,37 @@ export default function IdeaChatbot() {
                 </button>
               </div>
             </div>
+
+            {/* Delete confirmation overlay */}
+            <AnimatePresence>
+              {showDeleteConfirm && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="absolute top-16 right-3 left-3 bg-white rounded-2xl shadow-xl border-2 border-red-200 p-4 z-10 text-center"
+                  dir="rtl"
+                >
+                  <p className="text-sm font-bold text-slate-700 mb-1">🗑️ تأكيد الحذف</p>
+                  <p className="text-xs text-slate-500 mb-3">هل تريدين حذف كل المحادثة؟ لن تتمكني من استعادتها.</p>
+                  <div className="flex gap-2 justify-center">
+                    <button
+                      onClick={handleDeleteChat}
+                      disabled={isDeleting}
+                      className="bg-red-500 hover:bg-red-600 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors disabled:opacity-60"
+                    >
+                      {isDeleting ? '⏳ جارٍ الحذف...' : '🗑️ احذف'}
+                    </button>
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-xl transition-colors"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Assistant tabs */}
             <div className="bg-white border-b border-purple-100 p-2 flex gap-2 overflow-x-auto">
@@ -223,7 +307,7 @@ export default function IdeaChatbot() {
               ].map(q => (
                 <button
                   key={q.label}
-                  onClick={() => { setInput(q.prompt); }}
+                  onClick={() => handleSend(q.prompt)}
                   className="flex items-center gap-1 px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-full text-xs font-bold whitespace-nowrap transition-colors border border-purple-100"
                 >
                   <span>{q.emoji}</span><span>{q.label}</span>
@@ -233,6 +317,16 @@ export default function IdeaChatbot() {
 
             {/* Messages */}
             <div className="h-72 overflow-y-auto p-4 space-y-4 bg-slate-50">
+
+              {/* History indicator */}
+              {messages.length > 1 && (
+                <div className="text-center">
+                  <span className="text-[10px] text-slate-400 bg-white border border-slate-100 px-2 py-0.5 rounded-full">
+                    💾 محادثتك محفوظة
+                  </span>
+                </div>
+              )}
+
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[80%] rounded-2xl overflow-hidden ${
@@ -255,6 +349,7 @@ export default function IdeaChatbot() {
                   </div>
                 </div>
               ))}
+
               {isTyping && (
                 <div className="flex justify-start">
                   <div className="bg-white border border-purple-100 p-3 rounded-2xl rounded-tr-none shadow-sm flex gap-1 items-center h-10">
@@ -278,7 +373,7 @@ export default function IdeaChatbot() {
                 className="flex-1 bg-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
               />
               <button
-                onClick={handleSend}
+                onClick={() => handleSend()}
                 disabled={!input.trim() || isTyping}
                 className="bg-purple-500 text-white p-2 rounded-xl hover:bg-purple-600 disabled:opacity-50 transition-colors"
               >
@@ -303,7 +398,6 @@ export default function IdeaChatbot() {
           >
             {isOpen ? <X className="w-6 h-6" /> : <Shield className="w-6 h-6" />}
           </button>
-          {/* Small hide button in corner */}
           {!isOpen && (
             <button
               onClick={(e) => { e.stopPropagation(); handleHide(); }}
