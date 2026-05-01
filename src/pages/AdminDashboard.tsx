@@ -260,7 +260,12 @@ export default function AdminDashboard() {
             className={`px-6 py-2 rounded-xl font-bold transition-all flex items-center gap-2 ${activeTab === 'chats' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             <MessageSquare className="w-4 h-4" />
-            محادثات المساعد
+            محادثات الأطفال
+            {ideaChats.filter(c => c.role === 'user' && c.status === 'new').length > 0 && (
+              <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full animate-pulse">
+                {ideaChats.filter(c => c.role === 'user' && c.status === 'new').length}
+              </span>
+            )}
           </button>
         </div>
       </header>
@@ -557,8 +562,12 @@ export default function AdminDashboard() {
             <div className="p-8">
               <div className="flex justify-between items-center mb-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-slate-800">محادثات المساعد فكرة 💬</h2>
-                  <p className="text-slate-500">سجل المحادثات بين الأطفال والمساعد الذكي</p>
+                  <h2 className="text-2xl font-bold text-slate-800">محادثات الأطفال مع المساعد 💬</h2>
+                  <p className="text-slate-500">كل ما يكتبه الأطفال في الشات يظهر هنا — اضغط على اسم الطفلة لعرض المحادثة كاملة</p>
+                </div>
+                <div className="bg-indigo-50 border border-indigo-200 rounded-2xl px-4 py-2 text-center">
+                  <p className="text-2xl font-black text-indigo-700">{new Set(ideaChats.map(c => c.childId)).size}</p>
+                  <p className="text-xs text-indigo-500">طفلة تحادثت</p>
                 </div>
               </div>
               
@@ -579,9 +588,16 @@ export default function AdminDashboard() {
                       return (
                         <button
                           key={childId}
-                          onClick={() => {
+                          onClick={async () => {
                             setSelectedChatChild(childId);
-                            // Mark visible messages as read (UI only, logic below for firestore)
+                            const unread = childChats.filter(c => c.role === 'user' && c.status === 'new');
+                            if (unread.length > 0) {
+                              try {
+                                const batch = writeBatch(db);
+                                unread.forEach(c => batch.update(doc(db, 'idea_chats', c.id), { status: 'read' }));
+                                await batch.commit();
+                              } catch { /* non-critical */ }
+                            }
                           }}
                           className={`w-full text-right p-3 rounded-xl transition-all flex items-center gap-3 relative border ${
                             selectedChatChild === childId 
@@ -624,9 +640,12 @@ export default function AdminDashboard() {
                       <div className="p-4 bg-slate-50 border-b border-slate-200 font-bold text-slate-700 flex justify-between items-center">
                         <span>محادثة: {ideaChats.find(c => c.childId === selectedChatChild)?.childName}</span>
                       </div>
-                      <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50">
+                      <div className="flex-1 overflow-y-auto p-6 space-y-3 bg-slate-50">
                         {ideaChats.filter(c => c.childId === selectedChatChild).map(msg => (
-                          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                          <div key={msg.id} className={`flex flex-col gap-0.5 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                            <span className="text-[10px] text-slate-400 px-1">
+                              {msg.role === 'user' ? `👧 ${msg.childName}` : '🤖 المساعد'}
+                            </span>
                             <div className={`max-w-[80%] p-3 rounded-2xl ${
                               msg.role === 'user' 
                                 ? 'bg-indigo-500 text-white rounded-tl-none' 
