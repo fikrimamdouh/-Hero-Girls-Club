@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue } from 'motion/react';
-import { X, Send, Shield, EyeOff, Eye, Trash2 } from 'lucide-react';
+import { X, Send, Shield, EyeOff, Eye, Trash2, Mic, MicOff, Lightbulb, CheckCircle2, Volume2, VolumeX } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, addDoc, getDocs, query, where, deleteDoc, doc } from 'firebase/firestore';
 import { ChildProfile } from '../types';
@@ -41,24 +41,34 @@ function clearHistory(childId: string, assistantId: string) {
 export default function IdeaChatbot() {
   const assistants = [
     { id: 'malek', name: 'البطل مالك', emoji: '🛡️', vibe: 'الشجاعة، الحماس، والمغامرات الذكية', color: 'from-blue-500 to-indigo-600' },
-    { id: 'RINA', name: 'رينا الحكيمة', emoji: '🌙', vibe: 'الهدوء، الحكمة، والتفكير العميق', color: 'from-pink-500 to-fuchsia-600' },
-    { id: 'maria', name: 'ماريا المرحة', emoji: '😄', vibe: 'الضحك والفرفشة وخفة الدم', color: 'from-emerald-500 to-teal-600' }
+    { id: 'RINA',  name: 'رينا الحكيمة', emoji: '🌙', vibe: 'الهدوء، الحكمة، والتفكير العميق',     color: 'from-pink-500 to-fuchsia-600' },
+    { id: 'maria', name: 'ماريا المرحة', emoji: '😄', vibe: 'الضحك والفرفشة وخفة الدم',          color: 'from-emerald-500 to-teal-600' }
   ] as const;
 
-  const [isOpen, setIsOpen] = useState(false);
-  const [isHidden, setIsHidden] = useState(() => localStorage.getItem('chatbot_hidden') === 'true');
+  const [isOpen, setIsOpen]       = useState(false);
+  const [isHidden, setIsHidden]   = useState(() => localStorage.getItem('chatbot_hidden') === 'true');
   const [activeAssistantId, setActiveAssistantId] = useState<typeof assistants[number]['id']>('malek');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleting, setIsDeleting]   = useState(false);
+  const [messages, setMessages]       = useState<Message[]>([]);
+  const [input, setInput]             = useState('');
+  const [isTyping, setIsTyping]       = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [showIdeaModal, setShowIdeaModal] = useState(false);
+  const [ideaText, setIdeaText]           = useState('');
+  const [ideaSending, setIdeaSending]     = useState(false);
+  const [ideaSent, setIdeaSent]           = useState(false);
+  const [speakingIdx, setSpeakingIdx]     = useState<number | null>(null);
+  const [riddleScore, setRiddleScore]     = useState(0);
+
+  const riddleAnswerRef = useRef<string | null>(null);
+  const messagesEndRef  = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recogRef        = useRef<any>(null);
 
   const activeChildStr = localStorage.getItem('active_child');
-  const activeChild = activeChildStr ? JSON.parse(activeChildStr) as ChildProfile : null;
+  const activeChild    = activeChildStr ? JSON.parse(activeChildStr) as ChildProfile : null;
   const activeAssistant = assistants.find(a => a.id === activeAssistantId) || assistants[0];
-
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const saved = getSavedPos();
   const dragX = useMotionValue(saved.x);
@@ -96,6 +106,8 @@ export default function IdeaChatbot() {
       setMessages([makeWelcome(activeAssistant)]);
     }
     setShowDeleteConfirm(false);
+    setRiddleScore(0);
+    riddleAnswerRef.current = null;
   }, [activeAssistantId, activeChild?.uid]);
 
   useEffect(() => {
@@ -106,6 +118,37 @@ export default function IdeaChatbot() {
 
   const heroName = activeChild.heroName || activeChild.name || 'بطلتنا';
 
+  // ── ميكروفون ──
+  const handleMic = () => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+
+    if (isListening && recogRef.current) {
+      recogRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const recognition: any = new SR();
+    recognition.lang = 'ar-SA';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript;
+      setInput(transcript);
+      setIsListening(false);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend   = () => setIsListening(false);
+
+    recogRef.current = recognition;
+    setIsListening(true);
+    recognition.start();
+  };
+
+  // ── إرسال الرسالة ──
   const handleSend = async (overrideText?: string) => {
     const userMsg = (overrideText ?? input).trim();
     if (!userMsg || isTyping) return;
@@ -114,6 +157,9 @@ export default function IdeaChatbot() {
     const newMessages: Message[] = [...messages, { role: 'user', text: userMsg }];
     setMessages(newMessages);
     setIsTyping(true);
+
+    const currentRiddleAnswer = riddleAnswerRef.current;
+    riddleAnswerRef.current = null;
 
     try {
       const chatHistory = newMessages.slice(1).map(m => ({
@@ -127,7 +173,8 @@ export default function IdeaChatbot() {
         body: JSON.stringify({
           messages: chatHistory,
           assistantData: { name: activeAssistant.name, vibe: activeAssistant.vibe },
-          childName: heroName
+          childName: heroName,
+          riddleContext: currentRiddleAnswer ? { answer: currentRiddleAnswer } : undefined,
         }),
       });
 
@@ -144,10 +191,22 @@ export default function IdeaChatbot() {
       const botReply = data.text;
       if (!botReply) throw new Error('Empty AI response');
 
+      if (data.riddleAnswer) {
+        riddleAnswerRef.current = data.riddleAnswer;
+      }
+
+      // عداد الألغاز: لو كان فيه لغز نشط والرد يحتوي احتفال → نقطة!
+      if (
+        currentRiddleAnswer &&
+        !data.riddleAnswer &&
+        /واوووو صح|صح تماماً|أجبتِ بشكل صحيح|أصبتِ|أجبت/i.test(botReply)
+      ) {
+        setRiddleScore(s => s + 1);
+      }
+
       const botMsg: Message = { role: 'model', text: botReply, imageUrl: data.imageUrl || undefined };
       const updated: Message[] = [...newMessages, botMsg];
       setMessages(updated);
-
       saveHistory(activeChild.uid, activeAssistantId, updated);
 
       try {
@@ -178,11 +237,12 @@ export default function IdeaChatbot() {
     }
   };
 
+  // ── حذف المحادثة ──
   const handleDeleteChat = async () => {
     setIsDeleting(true);
     try {
       clearHistory(activeChild.uid, activeAssistantId);
-
+      riddleAnswerRef.current = null;
       const q = query(
         collection(db, 'idea_chats'),
         where('childId', '==', activeChild.uid)
@@ -192,8 +252,54 @@ export default function IdeaChatbot() {
     } catch { /* non-critical */ }
 
     setMessages([makeWelcome(activeAssistant)]);
+    setRiddleScore(0);
     setShowDeleteConfirm(false);
     setIsDeleting(false);
+  };
+
+  // ── قراءة الرد بصوت ──
+  const speak = useCallback((text: string, idx: number) => {
+    if (!window.speechSynthesis) return;
+    if (speakingIdx === idx) {
+      window.speechSynthesis.cancel();
+      setSpeakingIdx(null);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const clean = text.replace(/[*_#`💎🌙⚡🦸‍♂️🎉😄😂]/g, '').replace(/\*\*/g, '').trim();
+    const utt   = new SpeechSynthesisUtterance(clean);
+    utt.lang    = 'ar-SA';
+    utt.rate    = 0.88;
+    utt.pitch   = 1.05;
+    utt.onend   = () => setSpeakingIdx(null);
+    utt.onerror = () => setSpeakingIdx(null);
+    setSpeakingIdx(idx);
+    window.speechSynthesis.speak(utt);
+  }, [speakingIdx]);
+
+  // أوقف الصوت لما تُغلق النافذة
+  useEffect(() => {
+    if (!isOpen) { window.speechSynthesis?.cancel(); setSpeakingIdx(null); }
+  }, [isOpen]);
+
+  // ── إرسال فكرة للإدارة ──
+  const submitIdea = async () => {
+    if (!activeChild || !ideaText.trim()) return;
+    setIdeaSending(true);
+    try {
+      await addDoc(collection(db, 'feature_ideas'), {
+        childId:   activeChild.uid,
+        childName: activeChild.heroName || activeChild.name || 'بطلة',
+        idea:      ideaText.trim(),
+        createdAt: Date.now(),
+        status:    'new',
+        source:    'child',
+      });
+      setIdeaSent(true);
+      setIdeaText('');
+      setTimeout(() => { setIdeaSent(false); setShowIdeaModal(false); }, 2500);
+    } catch { /* non-critical */ }
+    setIdeaSending(false);
   };
 
   if (isHidden) {
@@ -211,6 +317,10 @@ export default function IdeaChatbot() {
       </motion.button>
     );
   }
+
+  const hasMicSupport = typeof window !== 'undefined' && (
+    !!(window as any).SpeechRecognition || !!(window as any).webkitSpeechRecognition
+  );
 
   return (
     <>
@@ -231,6 +341,11 @@ export default function IdeaChatbot() {
                 <h3 className="font-bold text-lg">{activeAssistant.name} {activeAssistant.emoji}</h3>
               </div>
               <div className="flex items-center gap-1">
+                {riddleScore > 0 && (
+                  <span className="bg-yellow-400 text-yellow-900 text-xs font-black px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                    ⭐{riddleScore}
+                  </span>
+                )}
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
                   title="حذف المحادثة"
@@ -299,11 +414,15 @@ export default function IdeaChatbot() {
             <div className="bg-white border-b border-purple-50 px-3 py-2 flex gap-2 overflow-x-auto">
               {[
                 { emoji: '🎨', label: 'ارسم لي', prompt: 'ارسم لي صورة جميلة ومبهجة' },
-                { emoji: '📖', label: 'قصة', prompt: 'احكي لي قصة مسلية قصيرة' },
-                { emoji: '🧩', label: 'لغز', prompt: 'هاتي لي لغزاً ممتعاً أو أحجية' },
-                { emoji: '✨', label: 'مدحني', prompt: 'قولي حاجة حلوة وشجعيني' },
-                { emoji: '🦁', label: 'حيوان', prompt: 'ارسم لي حيوان كرتون لطيف' },
-                { emoji: '🚀', label: 'فضاء', prompt: 'ارسم لي صورة فضاء وكواكب ملونة' },
+                { emoji: '🧩', label: 'لغز',     prompt: 'هاتي لي لغزاً ممتعاً' },
+                { emoji: '😂', label: 'نكتة',    prompt: 'احكيلي نكتة مضحكة' },
+                { emoji: '✨', label: 'شجعيني',  prompt: 'قولي حاجة حلوة وشجعيني' },
+                { emoji: '📖', label: 'قصة',        prompt: 'احكي لي قصة مسلية قصيرة' },
+                { emoji: '🎵', label: 'أغنية',      prompt: 'غنيلي أغنية حلوة' },
+                { emoji: '📅', label: 'كلمة اليوم', prompt: 'كلمة اليوم' },
+                { emoji: '🎯', label: 'تحدي اليوم', prompt: 'تحدي اليوم' },
+                { emoji: '🦁', label: 'حيوان',      prompt: 'ارسم لي حيوان كرتون لطيف' },
+                { emoji: '🚀', label: 'فضاء',       prompt: 'ارسم لي صورة فضاء وكواكب ملونة' },
               ].map(q => (
                 <button
                   key={q.label}
@@ -313,12 +432,17 @@ export default function IdeaChatbot() {
                   <span>{q.emoji}</span><span>{q.label}</span>
                 </button>
               ))}
+              {/* زر إرسال فكرة للإدارة — منفصل عن الشات */}
+              <button
+                onClick={() => { setShowIdeaModal(true); setIdeaSent(false); }}
+                className="flex items-center gap-1 px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-full text-xs font-bold whitespace-nowrap transition-colors border border-amber-200"
+              >
+                <Lightbulb className="w-3 h-3" /><span>فكرة 💡</span>
+              </button>
             </div>
 
             {/* Messages */}
             <div className="h-72 overflow-y-auto p-4 space-y-4 bg-slate-50">
-
-              {/* History indicator */}
               {messages.length > 1 && (
                 <div className="text-center">
                   <span className="text-[10px] text-slate-400 bg-white border border-slate-100 px-2 py-0.5 rounded-full">
@@ -329,23 +453,42 @@ export default function IdeaChatbot() {
 
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] rounded-2xl overflow-hidden ${
-                    msg.role === 'user'
-                      ? 'bg-purple-500 text-white rounded-tl-none'
-                      : 'bg-white border border-purple-100 text-slate-700 rounded-tr-none shadow-sm'
-                  }`}>
-                    {msg.imageUrl && (
-                      <div className="p-2">
-                        <img
-                          src={msg.imageUrl}
-                          alt="صورة مولّدة"
-                          className="rounded-xl w-full max-w-[220px] object-cover border border-purple-100"
-                          loading="lazy"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                        />
-                      </div>
+                  <div className="flex flex-col gap-1 max-w-[82%]">
+                    <div className={`rounded-2xl overflow-hidden ${
+                      msg.role === 'user'
+                        ? 'bg-purple-500 text-white rounded-tl-none'
+                        : 'bg-white border border-purple-100 text-slate-700 rounded-tr-none shadow-sm'
+                    }`}>
+                      {msg.imageUrl && (
+                        <div className="p-2">
+                          <img
+                            src={msg.imageUrl}
+                            alt="صورة مولّدة"
+                            className="rounded-xl w-full max-w-[220px] object-cover border border-purple-100"
+                            loading="lazy"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        </div>
+                      )}
+                      <p className="text-sm leading-relaxed p-3 pt-1 whitespace-pre-line">{msg.text}</p>
+                    </div>
+                    {/* زر الصوت — فقط لرسائل المساعد */}
+                    {msg.role === 'model' && window.speechSynthesis && (
+                      <button
+                        onClick={() => speak(msg.text, idx)}
+                        title={speakingIdx === idx ? 'أوقفي الصوت' : 'اسمعي الرد'}
+                        className={`self-start flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full transition-colors ${
+                          speakingIdx === idx
+                            ? 'bg-purple-200 text-purple-700 animate-pulse'
+                            : 'bg-slate-100 text-slate-400 hover:bg-purple-50 hover:text-purple-500'
+                        }`}
+                      >
+                        {speakingIdx === idx
+                          ? <><VolumeX className="w-3 h-3" /> إيقاف</>
+                          : <><Volume2 className="w-3 h-3" /> استمعي</>
+                        }
+                      </button>
                     )}
-                    <p className="text-sm leading-relaxed p-3 pt-1 whitespace-pre-line">{msg.text}</p>
                   </div>
                 </div>
               ))}
@@ -362,8 +505,23 @@ export default function IdeaChatbot() {
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Listening indicator */}
+            <AnimatePresence>
+              {isListening && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="bg-red-50 border-t border-red-100 px-4 py-2 flex items-center gap-2"
+                >
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                  <span className="text-xs text-red-600 font-bold">جارٍ الاستماع... تكلمي الآن</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Input */}
-            <div className="p-3 bg-white border-t border-purple-100 flex gap-2">
+            <div className="p-3 bg-white border-t border-purple-100 flex gap-2 items-center">
               <input
                 type="text"
                 value={input}
@@ -372,6 +530,19 @@ export default function IdeaChatbot() {
                 placeholder="اكتبي أو اختاري نشاطاً..."
                 className="flex-1 bg-slate-100 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
               />
+              {hasMicSupport && (
+                <button
+                  onClick={handleMic}
+                  title={isListening ? 'أوقفي الاستماع' : 'تحدثي الآن'}
+                  className={`p-2 rounded-xl transition-all ${
+                    isListening
+                      ? 'bg-red-500 text-white shadow-lg shadow-red-200 animate-pulse'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                </button>
+              )}
               <button
                 onClick={() => handleSend()}
                 disabled={!input.trim() || isTyping}
@@ -380,6 +551,61 @@ export default function IdeaChatbot() {
                 <Send className="w-5 h-5" />
               </button>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── نافذة إرسال فكرة للإدارة ── */}
+      <AnimatePresence>
+        {showIdeaModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) setShowIdeaModal(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ scale: 1,    opacity: 1 }}
+              exit={{ scale: 0.85,    opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 text-right"
+            >
+              {ideaSent ? (
+                <div className="text-center py-4">
+                  <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-3" />
+                  <p className="text-xl font-black text-green-700">وصلت فكرتك للمديرة! 🌟</p>
+                  <p className="text-slate-500 text-sm mt-1">شكراً يا بطلة!</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center mb-4">
+                    <button onClick={() => setShowIdeaModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                      <X className="w-5 h-5" />
+                    </button>
+                    <div className="text-right">
+                      <h3 className="text-lg font-black text-amber-700">💡 أرسلي فكرتك للمديرة</h3>
+                      <p className="text-xs text-slate-400">فكرة أو طلب أو اقتراح — كل شيء يوصل!</p>
+                    </div>
+                  </div>
+                  <textarea
+                    value={ideaText}
+                    onChange={e => setIdeaText(e.target.value)}
+                    placeholder="مثلاً: أريد لعبة جديدة، أو أريد قصة عن الفضاء..."
+                    rows={4}
+                    className="w-full bg-amber-50 border-2 border-amber-200 rounded-2xl p-3 text-sm resize-none focus:outline-none focus:border-amber-400 text-right"
+                    dir="rtl"
+                  />
+                  <button
+                    onClick={submitIdea}
+                    disabled={!ideaText.trim() || ideaSending}
+                    className="mt-3 w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-black py-3 rounded-2xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    {ideaSending ? '⏳ جارٍ الإرسال...' : <><Send className="w-4 h-4" /> إرسال الفكرة</>}
+                  </button>
+                </>
+              )}
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
