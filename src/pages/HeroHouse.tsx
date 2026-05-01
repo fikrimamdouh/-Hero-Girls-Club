@@ -452,11 +452,14 @@ export default function HeroHouse() {
   const isHost = activeChild?.uid === hostProfile?.uid;
 
   /* ─── HELPERS ────────────────────────────────────────────── */
-  const playSound = (type: 'knock' | 'magic' | 'pop') => {
+  const playSound = (type: 'knock' | 'magic' | 'pop' | 'ding' | 'celebrate' | 'wardrobe') => {
     const sounds = {
-      knock: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
-      magic: 'https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3',
-      pop: 'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'
+      knock:     'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
+      magic:     'https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3',
+      pop:       'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3',
+      ding:      'https://assets.mixkit.co/active_storage/sfx/2020/2020-preview.mp3',
+      celebrate: 'https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3',
+      wardrobe:  'https://assets.mixkit.co/active_storage/sfx/2022/2022-preview.mp3'
     };
     new Audio(sounds[type]).play().catch(() => {});
   };
@@ -532,6 +535,7 @@ export default function HeroHouse() {
     setPreviewAvatar(newAvatar);
     /* queue debounced Firestore save so wardrobe changes persist automatically */
     queueSave(activeChild.uid, { avatar: newAvatar });
+    playSound('celebrate');
   };
 
   const handleSaveOutfit = async () => {
@@ -999,7 +1003,7 @@ export default function HeroHouse() {
               </button>
             )}
             {isHost && (
-              <button onClick={() => { setShowWardrobe(!showWardrobe); setIsEditing(false); }}
+              <button onClick={() => { if (!showWardrobe) playSound('wardrobe'); setShowWardrobe(!showWardrobe); setIsEditing(false); }}
                 className={`w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all ${showWardrobe ? 'bg-fuchsia-500 text-white' : 'bg-white/90 text-fuchsia-500'}`}>
                 <Shirt className="w-5 h-5" />
               </button>
@@ -1122,7 +1126,7 @@ export default function HeroHouse() {
       <div className="absolute bottom-[140px] right-4 z-50 flex flex-col gap-2">
         {(Object.entries(ROOMS) as [RoomId, typeof ROOMS[RoomId]][]).map(([id, room]) => (
           <motion.button key={id} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-            onClick={() => setActiveRoom(id)}
+            onClick={() => { setActiveRoom(id); playSound('ding'); }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-black text-sm shadow-xl border-2 transition-all ${
               activeRoom === id
                 ? 'bg-fuchsia-500 text-white border-fuchsia-300'
