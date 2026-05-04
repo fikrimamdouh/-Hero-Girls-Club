@@ -190,7 +190,7 @@ export default function Game2048() {
     <div className="min-h-screen bg-amber-50 font-sans flex flex-col items-center py-8 px-4" dir="ltr">
       <div className="w-full max-w-md flex justify-between items-center mb-8">
         <button 
-          onClick={() => navigate('/child')}
+          onClick={() => navigate('/maria-games')}
           className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-amber-600 shadow-md hover:bg-amber-100 transition-all"
         >
           <ArrowRight className="w-6 h-6 rotate-180" />

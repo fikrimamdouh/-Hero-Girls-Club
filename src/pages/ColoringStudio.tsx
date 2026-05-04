@@ -182,7 +182,7 @@ export default function ColoringStudio() {
       <header className="bg-white/90 backdrop-blur-md p-4 border-b-4 border-pink-100 flex items-center justify-between relative z-50">
         <div className="flex items-center gap-4">
           <button 
-            onClick={() => navigate('/child')}
+            onClick={() => navigate('/drawing-games')}
             className="bg-pink-50 p-3 rounded-2xl text-princess-pink hover:bg-pink-100 transition-all"
           >
             <ArrowLeft className="w-6 h-6" />

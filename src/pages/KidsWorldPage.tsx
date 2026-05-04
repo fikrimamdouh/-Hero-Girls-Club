@@ -9,7 +9,7 @@ import { loadKidsProgress } from '../lib/kidsProgress';
 export default function KidsWorldPage() {
   const progress = loadKidsProgress();
   return (
-    <div className="min-h-screen bg-gradient-to-b from-pink-50 via-sky-50 to-violet-50 p-4 md:p-8" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-b from-pink-50 via-sky-50 to-rose-50 p-4 md:p-8" dir="rtl">
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <Link

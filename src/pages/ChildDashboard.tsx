@@ -1,1228 +1,681 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Star, Sparkles, Map, Palette, Book, Trophy, LogOut, Home, Settings, X, Lock, Loader2, Wand2, Users, PlayCircle, CheckCircle2, User, Heart, ArrowRight, Clock, Moon, Sun, LayoutGrid, Shield, Zap, MapPin, School, Smile } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { generateDailyQuest } from '../services/aiService';
+import {
+  Home, Gamepad2, Palette, GraduationCap, BookOpen, Users,
+  Star, Trophy, Bell, Settings, LogOut, X, Loader2, Sparkles,
+  PlayCircle, CheckCircle2, ChevronLeft, Search, Crown, Heart,
+  Brush, Film, Tv, Music2, Map as MapIcon, MessageCircle,
+  Wand2, Compass, Sun, Moon, Lock, Shield,
+} from 'lucide-react';
 import { auth, db } from '../firebase';
-import { doc, onSnapshot, setDoc, updateDoc, collection, query, where, getDoc, getDocs, limit } from 'firebase/firestore';
+import {
+  doc, onSnapshot, setDoc, updateDoc, collection, query, where,
+  getDocs, limit,
+} from 'firebase/firestore';
 import { ChildProfile, VisitRequest } from '../types';
 import { toast } from 'sonner';
-import { dailyMissions } from '../data/kidsUniverse';
 import { useTheme } from '../context/ThemeContext';
-
+import NotificationBell from '../components/NotificationBell';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Section catalog — reorganized into 5 worlds
+// ─────────────────────────────────────────────────────────────────────────────
+type WorldId = 'all' | 'play' | 'create' | 'learn' | 'faith' | 'connect';
+
+type SectionItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  Icon: any;
+  route: string;
+  world: Exclude<WorldId, 'all'>;
+  accent: string; // tailwind base color e.g. 'orange'
+  featured?: boolean;
+};
+
+const SECTIONS: SectionItem[] = [
+  // PLAY
+  { id: 'kids-games', title: 'بستان الألعاب', subtitle: 'أكثر من 40 لعبة ممتعة', Icon: Gamepad2, route: '/games', world: 'play', accent: 'orange', featured: true },
+  { id: 'maria-games', title: 'ألعاب ماريا', subtitle: 'مغامرات البطلات', Icon: Crown, route: '/maria-games', world: 'play', accent: 'rose' },
+  { id: 'drawing-games', title: 'ألعاب الرسم', subtitle: 'فن وإبداع تفاعلي', Icon: Brush, route: '/drawing-games', world: 'play', accent: 'fuchsia' },
+  { id: 'pet', title: 'حيواني الأليف', subtitle: 'اعتني برفيقك السحري', Icon: Heart, route: '/pet', world: 'play', accent: 'pink' },
+
+  // CREATE
+  { id: 'ai-design', title: 'استوديو التصميم', subtitle: 'صممي بالذكاء الاصطناعي', Icon: Wand2, route: '/ai-design', world: 'create', accent: 'violet', featured: true },
+  { id: 'coloring', title: 'استوديو التلوين', subtitle: 'لوحاتك بألوانك', Icon: Palette, route: '/coloring', world: 'create', accent: 'purple' },
+  { id: 'studio', title: 'ملفي وأفاتاري', subtitle: 'صممي شخصيتك', Icon: Sparkles, route: '/studio', world: 'create', accent: 'pink' },
+  { id: 'journal', title: 'دفتر العجائب', subtitle: 'سجلي يومياتك', Icon: BookOpen, route: '/journal', world: 'create', accent: 'amber' },
+
+  // LEARN
+  { id: 'learning', title: 'مغامرات التعلم', subtitle: 'لغة وحساب وعلوم', Icon: GraduationCap, route: '/learning', world: 'learn', accent: 'sky', featured: true },
+  { id: 'research', title: 'مركز الاكتشاف', subtitle: 'حقائق ومعلومات', Icon: Compass, route: '/research-center', world: 'learn', accent: 'cyan' },
+  { id: 'academy', title: 'أكاديمية البطلات', subtitle: 'دروس مرحة', Icon: GraduationCap, route: '/academy', world: 'learn', accent: 'indigo' },
+  { id: 'stories', title: 'مجرة القصص', subtitle: 'قصص قبل النوم', Icon: BookOpen, route: '/stories', world: 'learn', accent: 'violet' },
+
+  // FAITH
+  { id: 'quran', title: 'القرآن الكريم', subtitle: 'المصحف المعلم', Icon: BookOpen, route: '/cinema?cat=quran_full', world: 'faith', accent: 'emerald', featured: true },
+  { id: 'prophets', title: 'قصص الأنبياء', subtitle: 'مغامرات إيمانية', Icon: Star, route: '/cinema?cat=prophets_stories', world: 'faith', accent: 'teal' },
+  { id: 'values', title: 'واحة القيم', subtitle: 'أخلاق وآداب', Icon: Heart, route: '/values', world: 'faith', accent: 'green' },
+  { id: 'sunnah', title: 'السنة النبوية', subtitle: 'سلوك وأخلاق', Icon: Sparkles, route: '/cinema?cat=sunnah', world: 'faith', accent: 'lime' },
+
+  // CONNECT
+  { id: 'village', title: 'مدينة البطلات', subtitle: 'زوري صديقاتك', Icon: MapIcon, route: '/village', world: 'connect', accent: 'sky', featured: true },
+  { id: 'house', title: 'بيتي السحري', subtitle: 'زيني غرفتك', Icon: Home, route: '/house/self', world: 'connect', accent: 'amber' },
+  { id: 'friends', title: 'الدردشة الآمنة', subtitle: 'تكلمي مع صديقاتك', Icon: MessageCircle, route: '/friends', world: 'connect', accent: 'rose' },
+  { id: 'arena', title: 'ساحة التحدّيات', subtitle: 'تحدّي صديقاتك في XO', Icon: Trophy, route: '/arena', world: 'connect', accent: 'violet' },
+  { id: 'home-activities', title: 'أنشطة العائلة', subtitle: 'فعاليات منزلية', Icon: Users, route: '/home-activities', world: 'connect', accent: 'pink' },
+];
+
+const QUICK_WATCH = [
+  { title: 'سينما البطلات', subtitle: 'أفلام وحكايات', Icon: Film, route: '/cinema', accent: 'rose' },
+  { title: 'فيديوهات اليوتيوب', subtitle: 'مختارة بعناية', Icon: Tv, route: '/videos', accent: 'red' },
+  { title: 'قصة قبل النوم', subtitle: 'قصص هادئة', Icon: Music2, route: '/stories', accent: 'indigo' },
+];
+
+const WORLDS: { id: WorldId; label: string; Icon: any; accent: string }[] = [
+  { id: 'all', label: 'الرئيسية', Icon: Home, accent: 'rose' },
+  { id: 'play', label: 'ألعابي', Icon: Gamepad2, accent: 'orange' },
+  { id: 'create', label: 'فنوني', Icon: Palette, accent: 'violet' },
+  { id: 'learn', label: 'علومي', Icon: GraduationCap, accent: 'sky' },
+  { id: 'faith', label: 'إيماني', Icon: BookOpen, accent: 'emerald' },
+  { id: 'connect', label: 'صديقاتي', Icon: Users, accent: 'pink' },
+];
+
+// Map accent name → solid tailwind classes (avoid dynamic class pitfalls)
+const ACCENT: Record<string, { bg: string; text: string; ring: string; soft: string; from: string; to: string }> = {
+  rose:     { bg: 'bg-rose-500',     text: 'text-rose-600',     ring: 'ring-rose-200',     soft: 'bg-rose-50',     from: 'from-rose-400',     to: 'to-pink-500' },
+  pink:     { bg: 'bg-pink-500',     text: 'text-pink-600',     ring: 'ring-pink-200',     soft: 'bg-pink-50',     from: 'from-pink-400',     to: 'to-rose-500' },
+  orange:   { bg: 'bg-orange-500',   text: 'text-orange-600',   ring: 'ring-orange-200',   soft: 'bg-orange-50',   from: 'from-orange-400',   to: 'to-amber-500' },
+  amber:    { bg: 'bg-amber-500',    text: 'text-amber-600',    ring: 'ring-amber-200',    soft: 'bg-amber-50',    from: 'from-amber-400',    to: 'to-orange-500' },
+  violet:   { bg: 'bg-violet-500',   text: 'text-violet-600',   ring: 'ring-violet-200',   soft: 'bg-violet-50',   from: 'from-violet-400',   to: 'to-purple-500' },
+  purple:   { bg: 'bg-purple-500',   text: 'text-purple-600',   ring: 'ring-purple-200',   soft: 'bg-purple-50',   from: 'from-purple-400',   to: 'to-fuchsia-500' },
+  fuchsia:  { bg: 'bg-fuchsia-500',  text: 'text-fuchsia-600',  ring: 'ring-fuchsia-200',  soft: 'bg-fuchsia-50',  from: 'from-fuchsia-400',  to: 'to-pink-500' },
+  indigo:   { bg: 'bg-indigo-500',   text: 'text-indigo-600',   ring: 'ring-indigo-200',   soft: 'bg-indigo-50',   from: 'from-indigo-400',   to: 'to-violet-500' },
+  sky:      { bg: 'bg-sky-500',      text: 'text-sky-600',      ring: 'ring-sky-200',      soft: 'bg-sky-50',      from: 'from-sky-400',      to: 'to-cyan-500' },
+  cyan:     { bg: 'bg-cyan-500',     text: 'text-cyan-600',     ring: 'ring-cyan-200',     soft: 'bg-cyan-50',     from: 'from-cyan-400',     to: 'to-sky-500' },
+  emerald:  { bg: 'bg-emerald-500',  text: 'text-emerald-600',  ring: 'ring-emerald-200',  soft: 'bg-emerald-50',  from: 'from-emerald-400',  to: 'to-teal-500' },
+  teal:     { bg: 'bg-teal-500',     text: 'text-teal-600',     ring: 'ring-teal-200',     soft: 'bg-teal-50',     from: 'from-teal-400',     to: 'to-emerald-500' },
+  green:    { bg: 'bg-green-500',    text: 'text-green-600',    ring: 'ring-green-200',    soft: 'bg-green-50',    from: 'from-green-400',    to: 'to-emerald-500' },
+  lime:     { bg: 'bg-lime-500',     text: 'text-lime-600',     ring: 'ring-lime-200',     soft: 'bg-lime-50',     from: 'from-lime-400',     to: 'to-green-500' },
+  red:      { bg: 'bg-red-500',      text: 'text-red-600',      ring: 'ring-red-200',      soft: 'bg-red-50',      from: 'from-red-400',      to: 'to-rose-500' },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────────────────────
 export default function ChildDashboard() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const [profile, setProfile] = useState<ChildProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingTimeout, setLoadingTimeout] = useState(false);
+  const [activeWorld, setActiveWorld] = useState<WorldId>('all');
   const [showSettings, setShowSettings] = useState(false);
   const [editData, setEditData] = useState<Partial<ChildProfile>>({});
-  const [usePattern, setUsePattern] = useState(false);
-  const [pattern, setPattern] = useState<number[]>([]);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [dailyQuest, setDailyQuest] = useState<string>('');
-  const [loadingQuest, setLoadingQuest] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
   const [incomingRequest, setIncomingRequest] = useState<VisitRequest | null>(null);
-  const [dailyMission, setDailyMission] = useState(dailyMissions[0]);
-  const [completedToday, setCompletedToday] = useState(false);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const handledVisitUpdatesRef = useRef<Set<string>>(new Set());
+  const handledDecisions = useRef<Set<string>>(new Set());
 
-  const HERO_POWERS = [
-    { id: 'courage', name: 'قوة الشجاعة', icon: '🛡️' },
-    { id: 'kindness', name: 'قوة اللطف', icon: '💖' },
-    { id: 'wisdom', name: 'قوة الحكمة', icon: '🧠' },
-    { id: 'creativity', name: 'قوة الإبداع', icon: '🎨' },
-    { id: 'nature', name: 'قوة الطبيعة', icon: '🌿' },
-    { id: 'sparkle', name: 'قوة اللمعان', icon: '✨' },
-  ];
-
+  // ── Firestore wiring (unchanged behaviour, simplified) ────────────────────
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePos({ x: e.clientX, y: e.clientY });
-    };
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
-
-  useEffect(() => {
-    let unsubscribeProfile: (() => void) | null = null;
-    let unsubscribeRequests: (() => void) | null = null;
-    let unsubscribeDecisions: (() => void) | null = null;
-    let isMounted = true;
-    let activityInterval: any = null;
+    let unsubProfile: (() => void) | null = null;
+    let unsubReq: (() => void) | null = null;
+    let unsubDecisions: (() => void) | null = null;
+    let mounted = true;
+    let presenceTimer: any = null;
 
     const setup = async () => {
-      const activeChildStr = localStorage.getItem('active_child');
-      let activeChild: ChildProfile | null = null;
-      
-      if (activeChildStr) {
+      const stored = localStorage.getItem('active_child');
+      let active: ChildProfile | null = null;
+      if (stored) {
+        try { active = JSON.parse(stored); } catch {}
+      }
+      if (!active?.uid && auth.currentUser) {
         try {
-          activeChild = JSON.parse(activeChildStr);
-        } catch (e) {
-          console.error('Failed to parse active_child', e);
-        }
+          const q = query(collection(db, 'children_profiles'), where('parentId', '==', auth.currentUser.uid), limit(1));
+          const snap = await getDocs(q);
+          if (!snap.empty && mounted) {
+            active = { uid: snap.docs[0].id, ...snap.docs[0].data() } as ChildProfile;
+            localStorage.setItem('active_child', JSON.stringify(active));
+          }
+        } catch (e) { console.error('recover active child', e); }
       }
 
-      // If missing from local storage, try to recover from Firestore if parent is logged in
-      if (!activeChild?.uid && auth.currentUser) {
-        try {
-          const q = query(
-            collection(db, 'children_profiles'), 
-            where('parentId', '==', auth.currentUser.uid), 
-            limit(1)
-          );
-          const snapshot = await getDocs(q);
-          if (!snapshot.empty && isMounted) {
-            activeChild = { uid: snapshot.docs[0].id, ...snapshot.docs[0].data() } as ChildProfile;
-            localStorage.setItem('active_child', JSON.stringify(activeChild));
-          }
-        } catch (e) {
-          console.error('Recovery failed:', e);
+      if (!active?.uid) { if (mounted) setLoading(false); return; }
+
+      // Daily streak update (consecutive days)
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const last = (active as any).streakLastDate as string | undefined;
+        const prevStreak = (active as any).streak as number | undefined ?? 0;
+        if (last !== today) {
+          const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+          const nextStreak = last === yesterday ? prevStreak + 1 : 1;
+          updateDoc(doc(db, 'children_profiles', active.uid), {
+            streak: nextStreak,
+            streakLastDate: today,
+          }).catch(() => {});
         }
-      }
+      } catch {}
 
-      if (activeChild?.uid && isMounted) {
-        // Presence Heartbeat
-        const updatePresence = () => {
-          if (activeChild?.uid) {
-            updateDoc(doc(db, 'children_profiles', activeChild.uid), {
-              lastActive: Date.now()
-            }).catch(err => console.error('Failed to update presence:', err));
-          }
-        };
+      const tick = () => {
+        if (!active?.uid) return;
+        updateDoc(doc(db, 'children_profiles', active.uid), { lastActive: Date.now() }).catch(() => {});
+      };
+      tick();
+      presenceTimer = setInterval(tick, 60000);
 
-        updatePresence(); // Initial call
-        activityInterval = setInterval(updatePresence, 60000); // Every minute
-
-        const today = new Date().toDateString();
-        const missionIndex = today.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % dailyMissions.length;
-        setDailyMission(dailyMissions[missionIndex]);
-        
-        if (localStorage.getItem(`mission_completed_${activeChild.uid}_${today}`)) {
-          setCompletedToday(true);
+      const t = setTimeout(() => { if (mounted && loading) setLoading(false); }, 5000);
+      unsubProfile = onSnapshot(doc(db, 'children_profiles', active.uid), (snap) => {
+        clearTimeout(t);
+        if (!mounted) return;
+        if (snap.exists()) {
+          const data = { ...snap.data(), uid: snap.id } as ChildProfile;
+          setProfile(data);
+          setEditData(data);
+          localStorage.setItem('active_child', JSON.stringify(data));
         }
-        
-        // Safety timeout for loading
-        const timeoutId = setTimeout(() => {
-          if (loading && isMounted) {
-            console.warn('ChildDashboard: Loading timeout reached');
-            setLoading(false);
-          }
-        }, 5000); // Reduce to 5 seconds
-
-        // 1. Profile Listener
-        unsubscribeProfile = onSnapshot(doc(db, 'children_profiles', activeChild.uid), (snapshot) => {
-          clearTimeout(timeoutId);
-          if (!isMounted) return;
-          
-          if (snapshot.exists()) {
-            const data = { ...snapshot.data(), uid: snapshot.id } as ChildProfile;
-            setProfile(data);
-            setEditData(data);
-            localStorage.setItem('active_child', JSON.stringify(data));
-          } else {
-            setProfile(null);
-          }
-          setLoading(false);
-        }, (err) => {
-          clearTimeout(timeoutId);
-          if (isMounted) setLoading(false);
-          if (err.code !== 'not-found') {
-            console.error('Profile snapshot error:', err);
-          }
-        });
-
-        // 2. Visit Requests Listener
-        unsubscribeRequests = onSnapshot(
-          query(
-            collection(db, 'visit_requests'), 
-            where('toId', '==', activeChild.uid), 
-            where('status', '==', 'pending')
-          ),
-          (snapshot) => {
-            if (!isMounted) return;
-            if (!snapshot.empty) {
-              const sortedDocs = [...snapshot.docs].sort((a, b) => b.data().timestamp - a.data().timestamp);
-              const validRequest = sortedDocs.map(d => ({ id: d.id, ...d.data() } as VisitRequest))
-                .find(r => !!r.id && !!r.fromId && !!r.fromAvatar);
-
-              if (validRequest) {
-                setIncomingRequest(validRequest);
-                new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3').play().catch(() => {});
-              }
-            } else {
-              setIncomingRequest(null);
-            }
-          }
-        );
-
-        // 3. Decisions Listener
-        unsubscribeDecisions = onSnapshot(
-          query(
-            collection(db, 'visit_requests'), 
-            where('fromId', '==', activeChild.uid), 
-            where('status', 'in', ['accepted', 'rejected', 'declined'])
-          ),
-          (snapshot) => {
-            if (!isMounted) return;
-            snapshot.docs.forEach(docSnap => {
-              const request = { id: docSnap.id, ...docSnap.data() } as VisitRequest;
-              const key = `${request.id}_${request.status}`;
-              if (!handledVisitUpdatesRef.current.has(key)) {
-                handledVisitUpdatesRef.current.add(key);
-                if (request.status === 'accepted') {
-                  toast.success(`وافقت البطلة ${request.toName} على زيارتكِ 🎉`, {
-                    action: { label: 'الدخول الآن', onClick: () => navigate(`/house/${request.id}`) }
-                  });
-                }
-              }
-            });
-          }
-        );
-      } else if (isMounted) {
         setLoading(false);
-      }
+      }, (err) => { clearTimeout(t); console.error(err); if (mounted) setLoading(false); });
+
+      unsubReq = onSnapshot(
+        query(collection(db, 'visit_requests'), where('toId', '==', active.uid), where('status', '==', 'pending')),
+        (snap) => {
+          if (!mounted) return;
+          if (!snap.empty) {
+            const sorted = [...snap.docs].sort((a, b) => b.data().timestamp - a.data().timestamp);
+            const r = sorted.map((d) => ({ id: d.id, ...d.data() } as VisitRequest)).find((x) => !!x.id && !!x.fromId && !!x.fromAvatar);
+            if (r) setIncomingRequest(r);
+          } else setIncomingRequest(null);
+        },
+      );
+
+      // Outgoing decision listener: notify when remote child responds to my sent request
+      unsubDecisions = onSnapshot(
+        query(
+          collection(db, 'visit_requests'),
+          where('fromId', '==', active.uid),
+          where('status', 'in', ['accepted', 'rejected', 'declined']),
+        ),
+        (snap) => {
+          if (!mounted) return;
+          snap.docs.forEach((d) => {
+            const r = { id: d.id, ...d.data() } as VisitRequest;
+            const key = `${r.id}_${r.status}`;
+            if (handledDecisions.current.has(key)) return;
+            handledDecisions.current.add(key);
+            if (r.status === 'accepted') {
+              toast.success(`وافقت ${r.toName} على زيارتكِ 🎉`, {
+                action: { label: 'الدخول الآن', onClick: () => navigate(`/house/${r.id}`) },
+              });
+            }
+          });
+        },
+      );
     };
-
     setup();
-
     return () => {
-      isMounted = false;
-      if (activityInterval) clearInterval(activityInterval);
-      if (unsubscribeProfile) unsubscribeProfile();
-      if (unsubscribeRequests) unsubscribeRequests();
-      if (unsubscribeDecisions) unsubscribeDecisions();
+      mounted = false;
+      if (presenceTimer) clearInterval(presenceTimer);
+      unsubProfile?.(); unsubReq?.(); unsubDecisions?.();
     };
   }, [navigate]);
 
-  const handleAcceptVisit = async (request: VisitRequest) => {
-    if (!request || !request.id || !request.fromId || !request.toId || !request.fromAvatar) {
-      toast.error('بيانات الزيارة غير مكتملة');
-      return;
-    }
-
+  const handleAcceptVisit = async (r: VisitRequest) => {
     try {
-      const visitRef = doc(db, 'visit_requests', request.id);
-      await setDoc(visitRef, {
-        id: request.id,
-        fromId: request.fromId,
-        fromName: request.fromName,
-        fromHeroName: request.fromHeroName,
-        fromAvatar: request.fromAvatar,
-        toId: request.toId,
-        toName: request.toName,
-        toAvatar: request.toAvatar,
-        status: 'accepted',
-        acceptedAt: Date.now(),
-        roomMood: 'cozy'
-      }, { merge: true });
-      
-      // Clear incoming request locally to prevent double clicks
+      await setDoc(doc(db, 'visit_requests', r.id), { status: 'accepted', acceptedAt: Date.now(), roomMood: 'cozy' }, { merge: true });
       setIncomingRequest(null);
-      
-      // Small delay to ensure Firestore update propagates if needed, though navigate should be fine
-      setTimeout(() => {
-        navigate(`/house/${request.id}`);
-      }, 100);
-    } catch (error) {
-      console.error("Accept visit error:", error);
-      // If document doesn't exist, just clear the request
-      setIncomingRequest(null);
-    }
+      setTimeout(() => navigate(`/house/${r.id}`), 100);
+    } catch (e) { console.error(e); setIncomingRequest(null); }
+  };
+  const handleRejectVisit = async (r: VisitRequest) => {
+    try { await setDoc(doc(db, 'visit_requests', r.id), { status: 'rejected', resolvedAt: Date.now() }, { merge: true }); setIncomingRequest(null); }
+    catch (e) { console.error(e); toast.error('تعذّر رفض الطلب'); }
   };
 
-  const handleRejectVisit = async (request: VisitRequest) => {
-    try {
-      await setDoc(doc(db, 'visit_requests', request.id), {
-        status: 'rejected',
-        resolvedAt: Date.now()
-      }, { merge: true });
-      setIncomingRequest(null);
-    } catch (error) {
-      console.error("Reject visit error:", error);
-      toast.error('تعذر رفض الطلب حالياً، حاولي مرة أخرى');
-    }
-  };
+  const handleLogout = () => { localStorage.removeItem('active_child'); window.location.href = '/'; };
 
-  const handleGetQuest = async () => {
-    if (!profile || loadingQuest) return;
-    setLoadingQuest(true);
-    try {
-      const quest = await generateDailyQuest(profile.heroName || profile.name);
-      setDailyQuest(quest);
-    } catch (error) {
-      console.error("Error fetching quest:", error);
-    } finally {
-      setLoadingQuest(false);
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('active_child');
-    window.location.href = '/';
-  };
-
-  const handleUpdateProfile = async (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile) return;
-    
-    setLoading(true);
+    setSavingSettings(true);
     try {
-      const profileRef = doc(db, 'children_profiles', profile.uid);
-      await updateDoc(profileRef, {
-        ...editData,
-        updatedAt: Date.now()
-      });
-      
-      toast.success('تم تحديث بياناتكِ السحرية بنجاح! ✨');
+      await updateDoc(doc(db, 'children_profiles', profile.uid), { ...editData, updatedAt: Date.now() });
+      toast.success('تم الحفظ ✨');
       setShowSettings(false);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `children_profiles/${profile.uid}`);
-      toast.error('حدث خطأ أثناء التحديث');
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `children_profiles/${profile.uid}`);
+    } finally { setSavingSettings(false); }
   };
 
-  const handlePatternComplete = (finalPattern: number[]) => {
-    setPattern(finalPattern);
-    const patternPin = finalPattern.join('');
-    setEditData(prev => ({ 
-      ...prev, 
-      pattern: finalPattern,
-      pin: patternPin,
-      usePattern: true 
-    }));
-    toast.success('تم تسجيل النقش السحري وتحديث الرمز السري! 🎨');
-  };
+  const visibleSections = activeWorld === 'all'
+    ? SECTIONS.filter((s) => s.featured)
+    : SECTIONS.filter((s) => s.world === activeWorld);
 
-  const handleCompleteMission = async () => {
-    if (!completedToday && profile) {
-      try {
-        const today = new Date().toDateString();
-        const completionKey = `mission_completed_${profile.uid}_${today}`;
-        localStorage.setItem(completionKey, 'true');
-        setCompletedToday(true);
-        
-        // Update stars in Firestore
-        const profileRef = doc(db, 'children_profiles', profile.uid);
-        await updateDoc(profileRef, {
-          stars: (profile.stars || 0) + dailyMission.reward,
-          points: (profile.points || 0) + Math.floor(dailyMission.reward / 2)
-        });
-
-        toast.success(`رائع! لقد حصلتِ على ${dailyMission.reward} نجمة! ⭐`);
-        
-        // Play success sound
-        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3');
-        audio.play().catch(() => {});
-      } catch (e) {
-        console.error('Error completing mission:', e);
-        toast.error('حدث خطأ أثناء حفظ تقدمك');
-      }
-    }
-  };
-
-  if (!profile && !loading) {
+  // ── Loading / not-found states ────────────────────────────────────────────
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-fuchsia-950 via-violet-900 to-indigo-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="text-8xl mb-6 animate-pulse">✨</div>
-        <h2 className="text-2xl font-black text-white mb-2">عذراً، لم نتمكن من العثور على ملفكِ السحري</h2>
-        <p className="text-white/70 mb-8 max-w-md font-bold">
-          ربما تم تسجيل الخروج أو أن الجلسة انتهت. يرجى العودة للرئيسية وتسجيل الدخول مرة أخرى يا بطلة!
-        </p>
-        <div className="flex flex-col gap-3 w-full max-w-xs">
-          <button 
-            onClick={() => {
-              localStorage.removeItem('active_child');
-              navigate('/');
-            }}
-            className="bg-violet-500 hover:bg-violet-600 text-white font-black py-4 rounded-2xl shadow-lg transition-all"
-          >
-            العودة للرئيسية والدخول مجدداً
-          </button>
-        </div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#fdfaf6] text-stone-700" dir="rtl">
+        <Loader2 className="h-10 w-10 animate-spin text-rose-500 mb-3" />
+        <p className="font-arabic font-bold">جارٍ تحضير عالمكِ...</p>
       </div>
     );
   }
-
-  if (loading) {
+  if (!profile) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-fuchsia-950 via-violet-900 to-indigo-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="relative w-24 h-24 mb-6">
-          <div className="absolute inset-0 animate-spin rounded-full border-t-4 border-b-4 border-violet-400"></div>
-          <div className="absolute inset-0 flex items-center justify-center text-4xl">✨</div>
-        </div>
-        <h2 className="text-2xl font-black text-white mb-2">جاري فتح بوابات العالم السحري...</h2>
-        <p className="text-white/70 font-bold mb-6">انتظري قليلاً يا بطلة!</p>
-        
-        {/* Fallback button if stuck */}
-        <button 
-          onClick={() => window.location.reload()}
-          className="text-violet-300 text-sm font-bold hover:underline"
-        >
-          إذا استغرق الأمر طويلاً، اضغطي هنا لإعادة المحاولة
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#fdfaf6] text-center p-6" dir="rtl">
+        <div className="h-16 w-16 rounded-2xl bg-rose-100 text-rose-500 flex items-center justify-center mb-4"><Sparkles className="h-8 w-8" /></div>
+        <h2 className="font-arabic text-xl font-extrabold text-stone-900 mb-2">لم نجد ملفكِ السحري</h2>
+        <p className="font-arabic text-stone-500 mb-6 max-w-sm">يبدو أنّ الجلسة انتهت — ادخلي مرة أخرى من الصفحة الرئيسية.</p>
+        <button onClick={() => { localStorage.removeItem('active_child'); navigate('/'); }} className="rounded-2xl bg-rose-500 hover:bg-rose-600 text-white font-arabic font-bold px-6 py-3 shadow-lg shadow-rose-200">
+          العودة للرئيسية
         </button>
       </div>
     );
   }
 
+  const stars = profile.stars || 0;
+  const points = profile.points || 0;
+  const level = Math.floor(points / 100) + 1;
+  const heroName = profile.heroName || profile.name;
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-fuchsia-950 via-violet-900 to-indigo-950 font-sans overflow-hidden flex flex-col relative" dir="rtl">
-      {/* Magic Wand Effect */}
-      <motion.div
-        className="fixed pointer-events-none z-[9999] text-2xl"
-        animate={{ x: mousePos.x - 10, y: mousePos.y - 10 }}
-        transition={{ type: 'spring', damping: 20, stiffness: 200, mass: 0.5 }}
-      >
-        <Sparkles className="w-6 h-6 text-yellow-400 animate-pulse" />
-      </motion.div>
-
-      {/* Dynamic Background */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-0 w-full h-80 bg-gradient-to-b from-violet-800/40 via-fuchsia-800/20 to-transparent" />
-        <div className="absolute top-20 -left-16 w-72 h-72 bg-fuchsia-600/30 rounded-full blur-3xl" />
-        <div className="absolute top-10 -right-16 w-72 h-72 bg-cyan-600/20 rounded-full blur-3xl" />
-        <motion.div 
-          animate={{ x: [0, 100, 0], y: [0, -20, 0] }}
-          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-          className="absolute top-20 left-10 text-8xl opacity-20"
-        >☁️</motion.div>
-        <motion.div 
-          animate={{ x: [0, -100, 0], y: [0, 20, 0] }}
-          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-          className="absolute top-40 right-20 text-9xl opacity-15"
-        >☁️</motion.div>
-        <motion.div 
-          animate={{ scale: [1, 1.2, 1], opacity: [0.2, 0.5, 0.2] }}
-          transition={{ duration: 5, repeat: Infinity }}
-          className="absolute top-1/4 left-1/4 text-4xl"
-        >✨</motion.div>
-        <motion.div 
-          animate={{ scale: [1, 1.5, 1], opacity: [0.1, 0.3, 0.1] }}
-          transition={{ duration: 7, repeat: Infinity, delay: 1 }}
-          className="absolute bottom-1/4 right-1/3 text-6xl"
-        >🌟</motion.div>
-        <motion.div 
-          animate={{ y: [0, -30, 0], rotate: [0, 10, 0] }}
-          transition={{ duration: 10, repeat: Infinity }}
-          className="absolute top-1/2 right-10 text-5xl opacity-20"
-        >🎈</motion.div>
-      </div>
-
-      {/* Top Navigation Bar */}
-      <header className="relative z-20 p-4 md:p-6 flex justify-between items-center">
-        <div className="flex items-center gap-4 bg-white/10 backdrop-blur-xl p-3 pr-4 rounded-3xl shadow-[0_10px_30px_rgba(0,0,0,0.3)] border border-white/20">
-          <Avatar className={`w-14 h-14 ${profile.avatar?.color || 'bg-pink-600/50'} border-4 border-white/30 shadow-inner`}>
-            <AvatarFallback className="text-3xl scale-150 mt-4 bg-transparent">
-              {profile.avatar?.hairStyle || '👧'}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <h1 className="text-xl font-black text-white">{profile.heroName || profile.name}</h1>
-            <div className="flex items-center gap-3 text-sm font-bold">
-              <span className="flex items-center gap-1 text-amber-300">
-                <Star className="w-4 h-4 fill-current star-glow" /> {profile.points}
-              </span>
-              <span className="flex items-center gap-1 text-violet-300">
-                <Trophy className="w-4 h-4" /> م {profile.level}
-              </span>
+    <div className="min-h-screen bg-[#fdfaf6] text-stone-900 font-arabic" dir="rtl" style={{ backgroundImage: 'radial-gradient(circle at 0% 0%, rgba(251,207,232,0.4), transparent 50%), radial-gradient(circle at 100% 0%, rgba(254,215,170,0.35), transparent 45%)' }}>
+      {/* ─── Top bar ──────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 bg-white/70 backdrop-blur-xl border-b border-stone-200/60">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 h-16 flex items-center gap-3">
+          <div className="flex items-center gap-2 ml-auto">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-rose-400 to-pink-500 flex items-center justify-center shadow-md shadow-rose-200">
+              <Crown className="h-5 w-5 text-white" />
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-[11px] leading-none text-stone-400 font-bold">نادي البطلات</p>
+              <p className="text-sm font-extrabold leading-tight text-stone-800">عالمي السحري</p>
             </div>
           </div>
-        </div>
 
-        <div className="flex gap-3">
-          <button 
-            onClick={toggleTheme}
-            className="w-14 h-14 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/15 shadow-[0_8px_20px_rgba(0,0,0,0.2)] border border-white/20 transition-all hover:scale-105"
-            title={theme === 'light' ? 'الوضع الليلي' : 'الوضع النهاري'}
-          >
-            {theme === 'light' ? <Moon className="w-6 h-6" /> : <Sun className="w-6 h-6" />}
-          </button>
-          <button onClick={() => setShowSettings(true)} className="w-14 h-14 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/15 shadow-[0_8px_20px_rgba(0,0,0,0.2)] border border-white/20 transition-all hover:scale-105">
-            <Settings className="w-6 h-6" />
-          </button>
-          <button onClick={handleLogout} className="w-14 h-14 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center text-red-300 hover:text-red-200 hover:bg-red-500/20 shadow-[0_8px_20px_rgba(0,0,0,0.2)] border border-white/20 transition-all hover:scale-105">
-            <LogOut className="w-6 h-6" />
-          </button>
+          <div className="hidden md:flex items-center gap-2 mx-auto bg-stone-100/80 rounded-full px-4 py-2 text-stone-400 max-w-sm w-full">
+            <Search className="h-4 w-4" />
+            <span className="text-xs font-bold">ابحثي عن لعبة، قصة، فيديو...</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 mr-auto">
+            <button onClick={toggleTheme} aria-label="theme" className="h-10 w-10 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center transition-colors">
+              {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+            </button>
+            <NotificationBell recipientId={profile.uid} />
+            <button onClick={() => setShowSettings(true)} aria-label="إعدادات" className="h-10 w-10 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center transition-colors">
+              <Settings className="h-4 w-4" />
+            </button>
+            <button onClick={handleLogout} aria-label="خروج" className="h-10 w-10 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-500 flex items-center justify-center transition-colors">
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 relative z-10 flex flex-col px-4 md:px-8 pb-12 space-y-10 max-w-7xl mx-auto w-full mt-4">
-        
-        {/* Welcome & Progress Section */}
-        <Card className="relative overflow-hidden bg-gradient-to-l from-indigo-600 via-fuchsia-600 to-pink-500 rounded-[3rem] p-8 md:p-12 shadow-[0_30px_70px_rgba(79,70,229,0.35)] border border-white/30 flex flex-col md:flex-row items-center justify-between gap-8 transition-all group">
-          <div className="absolute top-0 right-0 w-72 h-72 bg-white/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-          <div className="absolute bottom-0 left-0 w-56 h-56 bg-cyan-300/20 rounded-full blur-2xl translate-y-1/2 -translate-x-1/2" />
-          
-          <div className="relative z-10 flex-1 text-center md:text-right w-full">
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="inline-flex items-center gap-2 bg-white/20 px-4 py-1.5 rounded-full text-xs font-black text-white mb-4 border border-white/30"
-            >
-              <Sparkles className="w-3 h-3" />
-              بطلة اليوم المتألقة
-            </motion.div>
-            <h2 className="text-4xl md:text-5xl font-black text-white mb-3 tracking-tight">مرحباً {profile.heroName || profile.name}</h2>
-            <p className="text-xl text-white/90 font-bold mb-2">جاهزة لمغامرة أجمل؟ كل يوم إنجاز جديد ينتظرك ✨</p>
-          </div>
-          
-          <motion.button 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="relative z-10 w-full md:w-auto bg-white text-indigo-700 font-black text-xl py-5 px-10 rounded-3xl shadow-2xl transition-all whitespace-nowrap flex items-center justify-center gap-3 overflow-hidden group"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-indigo-100/60 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-            <PlayCircle className="w-6 h-6" />
-            <span>ابدأ اللعب الآن</span>
-          </motion.button>
-        </Card>
-
-        {/* Daily Challenge Hero Section */}
-        <section className="relative overflow-hidden rounded-[3.5rem] bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 p-10 md:p-14 text-white shadow-2xl shadow-purple-500/30 border border-white/20">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2" />
-          <div className="absolute bottom-0 left-0 w-72 h-72 bg-pink-400/20 rounded-full blur-[80px] translate-y-1/2 -translate-x-1/2" />
-          
-          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-12">
-            <div className="flex-1 text-center md:text-right">
-              <motion.div 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-xl px-5 py-2 rounded-full text-sm font-black mb-6 border border-white/20 shadow-lg"
-              >
-                <Sparkles className="w-4 h-4 text-amber-300" />
-                تحدي اليوم السحري
-              </motion.div>
-              <h2 className="text-4xl md:text-6xl font-black mb-6 leading-[1.1] tracking-tight">
-                {dailyMission.title}
-              </h2>
-              <p className="text-indigo-100 text-xl font-bold mb-8 max-w-2xl leading-relaxed opacity-90">
-                {dailyMission.description}
-              </p>
-              <div className="flex flex-wrap items-center justify-center md:justify-start gap-6">
-                <motion.button 
-                  whileHover={{ scale: 1.05, boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={handleCompleteMission}
-                  disabled={completedToday}
-                  className={`px-10 py-5 rounded-3xl font-black text-xl shadow-2xl transition-all flex items-center gap-4 ${
-                    completedToday 
-                      ? 'bg-emerald-400 text-white cursor-default' 
-                      : 'bg-white text-purple-700 hover:bg-indigo-50'
-                  }`}
-                >
-                  {completedToday ? (
-                    <>
-                      <CheckCircle2 className="w-7 h-7" />
-                      <span>تم الإنجاز!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Star className="w-7 h-7 text-amber-500 fill-current" />
-                      <span>أنجزت المهمة! (+{dailyMission.reward})</span>
-                    </>
-                  )}
-                </motion.button>
-                <div className="flex items-center gap-3 bg-black/20 px-6 py-3 rounded-2xl backdrop-blur-md border border-white/10 shadow-inner">
-                  <span className="text-sm font-bold opacity-70">الصعوبة:</span>
-                  <span className="text-base font-black">{dailyMission.difficulty}</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="relative group">
-              <motion.div 
-                animate={{ y: [0, -20, 0], rotate: [0, 5, -5, 0] }}
-                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-                className="w-56 h-56 md:w-80 md:h-80 bg-white/10 backdrop-blur-2xl rounded-[4rem] border-2 border-white/30 flex items-center justify-center text-9xl shadow-[0_0_50px_rgba(255,255,255,0.1)] group-hover:shadow-[0_0_80px_rgba(255,255,255,0.2)] transition-all duration-500"
-              >
-                {completedToday ? '🏆' : '✨'}
-              </motion.div>
-              {/* Floating elements */}
-              <motion.div animate={{ scale: [1, 1.3, 1], rotate: 360 }} transition={{ duration: 3, repeat: Infinity }} className="absolute -top-6 -right-6 text-5xl filter drop-shadow-lg">⭐</motion.div>
-              <motion.div animate={{ scale: [1, 1.2, 1], y: [0, 10, 0] }} transition={{ duration: 4, repeat: Infinity, delay: 0.5 }} className="absolute -bottom-6 -left-6 text-5xl filter drop-shadow-lg">💎</motion.div>
-            </div>
-          </div>
-        </section>
-
-        {/* Quick Progress Bar */}
-        <Card className="bg-white/10 backdrop-blur-xl p-8 rounded-[3.5rem] border border-white/15 shadow-2xl transition-all">
-          <CardHeader className="p-0 mb-6 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-2xl font-black text-white flex items-center gap-3">
-              <div className="w-12 h-12 bg-amber-500/20 border border-amber-400/30 rounded-2xl flex items-center justify-center">
-                <Trophy className="w-7 h-7 text-amber-400" />
-              </div>
-              مستوى البطلة
-            </CardTitle>
-            <div className="text-right">
-              <span className="block text-xs font-black text-white/40 uppercase tracking-widest mb-1">المستوى الحالي</span>
-              <span className="text-2xl font-black text-violet-300">المستوى {Math.floor((profile?.points || 0) / 100) + 1}</span>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="h-8 bg-white/10 rounded-full overflow-hidden border border-white/20 shadow-inner p-1">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${(profile?.points || 0) % 100}%` }}
-                transition={{ duration: 2, ease: "circOut" }}
-                className="h-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-pink-500 rounded-full relative"
-              >
-                <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.2)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.2)_50%,rgba(255,255,255,0.2)_75%,transparent_75%,transparent)] bg-[length:30px_30px] animate-[shimmer_3s_linear_infinite]" />
-                <motion.div 
-                  animate={{ opacity: [0.5, 1, 0.5] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                  className="absolute right-0 top-0 bottom-0 w-8 bg-white/30 blur-md"
-                />
-              </motion.div>
-            </div>
-            <div className="flex justify-between items-center mt-4">
-              <p className="text-sm font-bold text-white/60">باقي {100 - ((profile?.points || 0) % 100)} نقطة للوصول للمستوى القادم! 🚀</p>
-              <div className="flex -space-x-2 rtl:space-x-reverse">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="w-8 h-8 rounded-full border-2 border-white/30 bg-white/10 flex items-center justify-center text-xs">⭐</div>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Incoming Visit Request */}
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 pt-6 pb-20 space-y-6">
+        {/* ─── Incoming visit request ────────────────────────────────── */}
         <AnimatePresence>
           {incomingRequest && (
             <motion.div
-              initial={{ opacity: 0, y: -50, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="max-w-2xl mx-auto mb-8 bg-white/15 backdrop-blur-xl p-6 rounded-[2rem] shadow-2xl border-2 border-pink-400/50 flex flex-col md:flex-row items-center gap-6"
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="rounded-2xl bg-white ring-2 ring-rose-300/70 shadow-md shadow-rose-100 p-4 flex flex-wrap items-center gap-4"
             >
-              <div className={`w-24 h-24 ${incomingRequest.fromAvatar.color} rounded-full flex items-center justify-center text-6xl border-4 border-white/30 shadow-inner overflow-hidden`}>
-                <span className="mt-6">{incomingRequest.fromAvatar.hairStyle}</span>
+              <div className={`h-12 w-12 rounded-xl ${incomingRequest.fromAvatar.color} flex items-center justify-center text-2xl shrink-0`}>
+                {incomingRequest.fromAvatar.hairStyle}
               </div>
-              <div className="text-center md:text-right flex-1">
-                <h3 className="text-2xl font-black text-pink-300 mb-1">طرق طرق! 🚪</h3>
-                <p className="text-lg font-bold text-white/80">البطلة <span className="text-pink-300">{incomingRequest.fromHeroName}</span> تريد زيارتكِ!</p>
+              <div className="flex-1 min-w-[180px]">
+                <p className="text-xs text-rose-500 font-extrabold mb-0.5">طرق على بابكِ 🚪</p>
+                <p className="text-sm font-extrabold text-stone-800">البطلة {incomingRequest.fromHeroName} تريد زيارتكِ</p>
               </div>
-              <div className="flex gap-3 w-full md:w-auto">
-                <button onClick={() => handleAcceptVisit(incomingRequest)} className="flex-1 md:flex-none bg-emerald-500 text-white font-black py-3 px-6 rounded-xl shadow-lg hover:bg-emerald-600 hover:scale-105 transition-all">
-                  تفضلي! ✨
-                </button>
-                <button onClick={() => handleRejectVisit(incomingRequest)} className="flex-1 md:flex-none bg-white/10 text-white/70 border border-white/20 font-bold py-3 px-6 rounded-xl hover:bg-white/15 transition-all">
-                  ليس الآن
-                </button>
+              <div className="flex gap-2">
+                <button onClick={() => handleAcceptVisit(incomingRequest)} className="rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-extrabold px-4 py-2 shadow-sm">تفضّلي</button>
+                <button onClick={() => handleRejectVisit(incomingRequest)} className="rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 text-sm font-bold px-4 py-2">ليس الآن</button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* أقسام التواصل والزيارات - Moved up for better visibility */}
+        {/* ─── Personal welcome strip ────────────────────────────────── */}
+        <WelcomeStrip
+          heroName={heroName}
+          stars={stars}
+          level={level}
+          streak={profile.streak || 0}
+          lastSection={profile.lastSection}
+          onContinue={(route) => navigate(route)}
+        />
+
+        {/* ─── World tabs (HUGE pills, Nick Jr style) ───────────────── */}
+        <div className="flex items-center gap-3 overflow-x-auto pb-2 -mx-1 px-1 scroll-smooth" style={{ scrollbarWidth: 'none' }}>
+          {WORLDS.map((w) => {
+            const a = ACCENT[w.accent];
+            const active = activeWorld === w.id;
+            return (
+              <button
+                key={w.id}
+                onClick={() => setActiveWorld(w.id)}
+                className={`shrink-0 inline-flex items-center gap-3 rounded-full px-6 py-4 text-base sm:text-lg font-black ring-2 transition-all active:scale-95 ${
+                  active
+                    ? `${a.bg} text-white ring-transparent shadow-lg shadow-stone-300`
+                    : 'bg-white text-stone-700 ring-stone-200 hover:bg-stone-50 hover:ring-stone-300'
+                }`}
+              >
+                <w.Icon className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={2.5} />
+                {w.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ─── BIG section grid (Nick Jr huge buttons) ───────────────── */}
         <section>
-          <h3 className="text-2xl font-black text-white mb-6 flex items-center gap-2">
-            🏘️ أقسام التواصل والزيارات
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <MiniZoneCard title="بيتي السحري" subtitle="العبي وزيني غرفتكِ" icon="🏰" color="bg-amber-500/20 text-amber-100 border-amber-400/30" onClick={() => navigate('/house/self')} />
-            <MiniZoneCard title="مدينة البطلات" subtitle="زوري البطلات وتابعي النشاط" icon="🗺️" color="bg-sky-500/20 text-sky-100 border-sky-400/30" onClick={() => navigate('/village')} />
-            <MiniZoneCard title="الدردشة والتواصل" subtitle="صديقاتك في مساحة آمنة" icon="💬" color="bg-indigo-500/20 text-indigo-100 border-indigo-400/30" onClick={() => navigate('/friends')} />
+          <h2 className="text-2xl sm:text-3xl font-black text-stone-800 mb-4">
+            {activeWorld === 'all' ? 'اختاري وابدئي 🎉' : `عالم ${WORLDS.find((w) => w.id === activeWorld)?.label}`}
+          </h2>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+            {visibleSections.map((s) => (
+              <SectionCard key={s.id} item={s} onClick={() => {
+                if (profile?.uid) {
+                  updateDoc(doc(db, 'children_profiles', profile.uid), {
+                    lastSection: { id: s.id, title: s.title, route: s.route, accent: s.accent, at: Date.now() },
+                  }).catch(() => {});
+                }
+                navigate(s.route);
+              }} />
+            ))}
           </div>
         </section>
 
-        {/* Daily Quest Banner */}
-        <div className="w-full">
-          <motion.div 
-            whileHover={{ scale: 1.02 }}
-            className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-[2rem] p-6 md:p-8 text-white shadow-xl relative overflow-hidden cursor-pointer"
-            onClick={handleGetQuest}
-          >
-            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-            <div className="relative z-10 flex flex-col md:flex-row items-center gap-6">
-              <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-md border-2 border-white/30 shrink-0">
-                <Wand2 className="w-10 h-10 text-yellow-300" />
-              </div>
-              <div className="flex-1 text-center md:text-right">
-                <h2 className="text-xl font-black text-yellow-300 mb-2">مهمة اليوم السحرية</h2>
-                {loadingQuest ? (
-                  <div className="flex items-center justify-center md:justify-start gap-2">
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span className="font-bold">جاري الاستماع للنجوم...</span>
-                  </div>
-                ) : (
-                  <p className="text-lg md:text-xl font-bold leading-relaxed">"{dailyQuest || 'يا بطلة الزهور! مهمتكِ السحرية اليوم هي **"نشر عبير النظام"**؛ استخدمي قواكِ الخارقة لإعادة ألعابكِ المبعثرة إلى مخبئها السري، وبلمسة من يدكِ ستتحول غرفتكِ إلى أجمل مملكة في العالم. انطلقي يا بطلة، نحن نثق بكِ! ✨🌸'}"</p>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        </div>
-
-
-
-        {/* الأكاديمية الإسلامية */}
-        <Card className="bg-white/10 backdrop-blur-xl rounded-[3.5rem] p-10 md:p-14 border border-white/15 shadow-2xl transition-all">
-          <CardHeader className="p-0 flex flex-col md:flex-row items-center justify-between gap-6 mb-12 space-y-0">
-            <div className="text-center md:text-right">
-              <CardTitle className="text-3xl md:text-4xl font-black text-white mb-2 flex items-center justify-center md:justify-start gap-3">
-                <div className="w-14 h-14 bg-emerald-500/20 border border-emerald-400/30 rounded-2xl flex items-center justify-center">
-                  <Book className="w-8 h-8 text-emerald-400" />
-                </div>
-                الأكاديمية الإسلامية
-              </CardTitle>
-              <CardDescription className="text-white/60 font-bold text-lg">رحلة إيمانية ممتعة لتعلم القرآن والسنة ✨</CardDescription>
-            </div>
-            <button className="bg-emerald-500 hover:bg-emerald-600 text-white font-black px-8 py-4 rounded-2xl shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2">
-              <Sparkles className="w-5 h-5" />
-              عرض كل الدروس
-            </button>
-          </CardHeader>
-
-          <CardContent className="p-0 space-y-12 relative z-10">
-            {/* القرآن الكريم */}
-            <div>
-              <h4 className="text-xl font-black text-emerald-300 mb-6 flex items-center gap-3">
-                <span className="w-2 h-8 bg-emerald-500 rounded-full" />
-                🕌 القرآن الكريم
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <MiniZoneCard 
-                  title="المصحف كامل" 
-                  subtitle="المصحف المعلم" 
-                  icon="📖" 
-                  color="bg-emerald-500/15 text-emerald-100 border-emerald-400/25" 
-                  onClick={() => navigate('/cinema?cat=quran_full&sub=المصحف كامل')} 
-                />
-                <MiniZoneCard 
-                  title="السور القصيرة" 
-                  subtitle="حفظ وفهم" 
-                  icon="✨" 
-                  color="bg-emerald-500/15 text-emerald-100 border-emerald-400/25" 
-                  onClick={() => navigate('/cinema?cat=quran_full&sub=المصحف المعلم')} 
-                />
-                <MiniZoneCard 
-                  title="تحفيظ الأطفال" 
-                  subtitle="رددي مع الأطفال" 
-                  icon="👧" 
-                  color="bg-emerald-500/15 text-emerald-100 border-emerald-400/25" 
-                  onClick={() => navigate('/cinema?cat=quran_full&sub=المصحف المعلم')} 
-                />
-                <MiniZoneCard 
-                  title="قراء مختلفين" 
-                  subtitle="أجمل الأصوات" 
-                  icon="🎙️" 
-                  color="bg-emerald-500/15 text-emerald-100 border-emerald-400/25" 
-                  onClick={() => navigate('/cinema?cat=quran_full')} 
-                />
-              </div>
-            </div>
-
-            {/* التفسير وقصص الأنبياء */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-              <div className="bg-amber-500/10 p-8 rounded-[2.5rem] border border-amber-400/20">
-                <h4 className="text-xl font-black text-amber-300 mb-6 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-amber-500/20 border border-amber-400/30 rounded-xl flex items-center justify-center">
-                    <Sparkles className="w-6 h-6 text-amber-400" />
-                  </div>
-                  💡 التفسير
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <MiniZoneCard 
-                    title="تفسير مبسط" 
-                    subtitle="للأطفال" 
-                    icon="🔍" 
-                    color="bg-amber-500/15 text-amber-100 border-amber-400/25" 
-                    onClick={() => navigate('/cinema?cat=interpretation&sub=تفسير مبسط')} 
-                  />
-                  <MiniZoneCard 
-                    title="تفسير السور" 
-                    subtitle="السور القصيرة" 
-                    icon="📖" 
-                    color="bg-amber-500/15 text-amber-100 border-amber-400/25" 
-                    onClick={() => navigate('/cinema?cat=interpretation&sub=تفسير السور القصيرة')} 
-                  />
-                </div>
-              </div>
-              <div className="bg-sky-500/10 p-8 rounded-[2.5rem] border border-sky-400/20">
-                <h4 className="text-xl font-black text-sky-300 mb-6 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-sky-500/20 border border-sky-400/30 rounded-xl flex items-center justify-center">
-                    <Star className="w-6 h-6 text-sky-400" />
-                  </div>
-                  🌟 قصص الأنبياء
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <MiniZoneCard 
-                    title="قصص الأنبياء" 
-                    subtitle="مغامرات إيمانية" 
-                    icon="📜" 
-                    color="bg-sky-500/15 text-sky-100 border-sky-400/25" 
-                    onClick={() => navigate('/cinema?cat=prophets_stories&sub=مغامرات إيمانية')} 
-                  />
-                  <MiniZoneCard 
-                    title="قصة اليوم" 
-                    subtitle="نبي الله يوسف" 
-                    icon="✨" 
-                    color="bg-sky-500/15 text-sky-100 border-sky-400/25" 
-                    onClick={() => navigate('/cinema?cat=prophets_stories&sub=قصص الأنبياء')} 
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* السنة النبوية */}
-            <div className="bg-indigo-500/10 p-8 rounded-[2.5rem] border border-indigo-400/20">
-              <h4 className="text-xl font-black text-indigo-300 mb-6 flex items-center gap-3">
-                <div className="w-10 h-10 bg-indigo-500/20 border border-indigo-400/30 rounded-xl flex items-center justify-center">
-                  <Heart className="w-6 h-6 text-indigo-400" />
-                </div>
-                ❤️ السنة النبوية
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <MiniZoneCard 
-                  title="سلوكيات" 
-                  subtitle="أخلاق المسلم" 
-                  icon="🤝" 
-                  color="bg-indigo-500/15 text-indigo-100 border-indigo-400/25" 
-                  onClick={() => navigate('/cinema?cat=sunnah&sub=أخلاق المسلم')} 
-                />
-                <MiniZoneCard 
-                  title="آداب" 
-                  subtitle="آداب يومية" 
-                  icon="🍽️" 
-                  color="bg-indigo-500/15 text-indigo-100 border-indigo-400/25" 
-                  onClick={() => navigate('/cinema?cat=sunnah&sub=آداب يومية')} 
-                />
-                <MiniZoneCard 
-                  title="أذكار" 
-                  subtitle="حصن المسلم" 
-                  icon="📿" 
-                  color="bg-indigo-500/15 text-indigo-100 border-indigo-400/25" 
-                  onClick={() => navigate('/cinema?cat=sunnah')} 
-                />
-                <MiniZoneCard 
-                  title="عادات يومية" 
-                  subtitle="روتين البطلة" 
-                  icon="☀️" 
-                  color="bg-indigo-500/15 text-indigo-100 border-indigo-400/25" 
-                  onClick={() => navigate('/cinema?cat=sunnah')} 
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* المفضلة والمشاهدة مؤخراً */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-          <section className="bg-white/10 backdrop-blur-xl rounded-[3rem] p-8 md:p-10 border border-white/15 shadow-2xl">
-            <h3 className="text-2xl font-black text-white mb-8 flex items-center gap-3">
-              <div className="w-10 h-10 bg-pink-500/20 border border-pink-400/30 rounded-xl flex items-center justify-center">
-                <Heart className="w-6 h-6 text-pink-400" />
-              </div>
-              مفضلاتي السحرية
-            </h3>
-            <div className="bg-white/10 rounded-3xl p-8 text-center border border-pink-400/20">
-              <div className="text-5xl mb-4">💖</div>
-              <p className="text-white/70 font-bold mb-6 text-lg">الفيديوهات والقصص التي تحبينها ستظهر هنا!</p>
-              <button 
-                onClick={() => navigate('/cinema?cat=favorites')}
-                className="bg-pink-500 hover:bg-pink-600 text-white font-black px-8 py-3 rounded-2xl shadow-lg shadow-pink-500/20 transition-all flex items-center justify-center gap-2 mx-auto"
-              >
-                اذهبي للمفضلة <ArrowRight className="w-5 h-5" />
-              </button>
-            </div>
-          </section>
-
-          <section className="bg-white/10 backdrop-blur-xl rounded-[3rem] p-8 md:p-10 border border-white/15 shadow-2xl">
-            <h3 className="text-2xl font-black text-white mb-8 flex items-center gap-3">
-              <div className="w-10 h-10 bg-indigo-500/20 border border-indigo-400/30 rounded-xl flex items-center justify-center">
-                <Clock className="w-6 h-6 text-indigo-400" />
-              </div>
-              شوهد مؤخراً
-            </h3>
-            <div className="bg-white/10 rounded-3xl p-8 text-center border border-indigo-400/20">
-              <div className="text-5xl mb-4">🎬</div>
-              <p className="text-white/70 font-bold mb-6 text-lg">تابعي من حيث توقفتِ في مغامراتكِ!</p>
-              <button 
-                onClick={() => navigate('/cinema?cat=recent')}
-                className="bg-indigo-500 hover:bg-indigo-600 text-white font-black px-8 py-3 rounded-2xl shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2 mx-auto"
-              >
-                تابعي المشاهدة <ArrowRight className="w-5 h-5" />
-              </button>
-            </div>
-          </section>
-        </div>
-
-        {/* عالم البطلات الكبير */}
+        {/* ─── Quick watch row (BIG video tiles) ─────────────────────── */}
         <section>
-          <div className="mb-6">
-            <h3 className="text-2xl font-black text-white flex items-center gap-2 mb-1">
-              🌟 عالم البطلات الكبير
-            </h3>
-            <p className="text-white/60 font-bold">اختاري أي منطقة واستمري في رحلة الاكتشاف والمرح والتعلّم.</p>
+          <div className="flex items-end justify-between mb-4">
+            <h2 className="text-2xl sm:text-3xl font-black text-stone-800">شاهدي الآن 📺</h2>
+            <button onClick={() => navigate('/cinema')} className="text-sm font-black text-rose-500 hover:text-rose-600 inline-flex items-center gap-1">
+              الكل <ChevronLeft className="h-4 w-4" />
+            </button>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            <MicroZoneCard title="ألعاب ماريا الشقية" subtitle="ألعاب جديدة وممتعة" icon="🎀" color="bg-pink-500/20 hover:bg-pink-500/30 text-pink-100 border-pink-400/30" onClick={() => navigate('/maria-games')} />
-            <MicroZoneCard title="مركز الألعاب" subtitle="كل الألعاب في مكان واحد" icon="🎮" color="bg-orange-500/20 hover:bg-orange-500/30 text-orange-100 border-orange-400/30" onClick={() => navigate('/games')} />
-            <MicroZoneCard title="مجرة القصص" subtitle="قصص سحرية قبل النوم" icon="📚" color="bg-purple-500/20 hover:bg-purple-500/30 text-purple-100 border-purple-400/30" onClick={() => navigate('/stories')} />
-            <MicroZoneCard title="قاعة السينما" subtitle="فيديوهات آمنة وممتعة" icon="🎬" color="bg-fuchsia-500/20 hover:bg-fuchsia-500/30 text-fuchsia-100 border-fuchsia-400/30" onClick={() => navigate('/cinema')} />
-            <MicroZoneCard title="فيديوهات تعليمية" subtitle="تعلم ممتع من يوتيوب" icon="🎓" color="bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 border-rose-400/30" onClick={() => navigate('/cinema?cat=educational')} />
-            <MicroZoneCard title="المصمم الذكي" subtitle="صممي بالذكاء الاصطناعي" icon="🪄" color="bg-violet-500/20 hover:bg-violet-500/30 text-violet-100 border-violet-400/30" onClick={() => navigate('/ai-design')} />
-            <MicroZoneCard title="عالم التلوين" subtitle="ألوانكِ السحرية" icon="🎨" color="bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 border-rose-400/30" onClick={() => navigate('/coloring')} />
-            <MicroZoneCard title="حكايات عالمية" subtitle="قصص من كل مكان" icon="📖" color="bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 border-amber-400/30" onClick={() => navigate('/cinema?cat=stories')} />
-            <MicroZoneCard title="واحة القيم" subtitle="قرآن وأخلاق إيمانية" icon="🌙" color="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-100 border-emerald-400/30" onClick={() => navigate('/values')} />
-            <MicroZoneCard title="ركن الاكتشاف" subtitle="حقائق لطيفة يومية" icon="🔍" color="bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-100 border-cyan-400/30" onClick={() => navigate('/values')} />
-            <div className="relative group">
-              <motion.div
-                whileHover={{ scale: 1.1, rotate: -2 }}
-                whileTap={{ scale: 0.9 }}
-                className="relative"
-              >
-                <div className="absolute -inset-1 bg-gradient-to-r from-cyan-400 to-indigo-500 rounded-[2.5rem] blur opacity-40 group-hover:opacity-80 transition duration-1000 group-hover:duration-200" />
-                <MicroZoneCard 
-                  title="مركز الأبحاث المذهل" 
-                  subtitle="مساعد الواجبات والبحث العلمي" 
-                  icon="🧪" 
-                  color="bg-white/15 border-cyan-400/40 text-white relative z-10" 
-                  onClick={() => navigate('/research-center')} 
-                />
-              </motion.div>
-            </div>
-            <MicroZoneCard title="لعبة الذاكرة" subtitle="تحديات ذكاء وتركيز" icon="🧩" color="bg-fuchsia-500/20 hover:bg-fuchsia-500/30 text-fuchsia-100 border-fuchsia-400/30" onClick={() => navigate('/games/memory')} />
-            <MicroZoneCard title="لعبة 2048" subtitle="تحدي الأرقام" icon="🔢" color="bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 border-amber-400/30" onClick={() => navigate('/games/2048')} />
-            <MicroZoneCard title="سيمون يقول" subtitle="تحدي الذاكرة البصرية" icon="🎨" color="bg-slate-500/20 hover:bg-slate-500/30 text-slate-100 border-slate-400/30" onClick={() => navigate('/games/simon')} />
-            <MicroZoneCard title="إكس أو" subtitle="تحدي الذكاء" icon="❌" color="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-100 border-indigo-400/30" onClick={() => navigate('/games/tictactoe')} />
-            <MicroZoneCard title="صانع المرافق" subtitle="تلبيس وتصميم" icon="🦄" color="bg-pink-500/20 hover:bg-pink-500/30 text-pink-100 border-pink-400/30" onClick={() => navigate('/games/petmaker')} />
-            <MicroZoneCard title="الكلمات السحرية" subtitle="لعبة الحروف" icon="🔤" color="bg-sky-500/20 hover:bg-sky-500/30 text-sky-100 border-sky-400/30" onClick={() => navigate('/games/words')} />
-            <MicroZoneCard title="صيد النجوم" subtitle="لعبة سرعة" icon="⭐" color="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-100 border-yellow-400/30" onClick={() => navigate('/games/catch')} />
-            <MicroZoneCard title="جزيرة المهمات" subtitle="مهام يومية ممتعة" icon="🗺️" color="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-100 border-emerald-400/30" onClick={() => navigate('/academy')} />
-            <MicroZoneCard title="مغامرات التعلم" subtitle="علوم ولغة وحساب" icon="🚀" color="bg-orange-500/20 hover:bg-orange-500/30 text-orange-100 border-orange-400/30" onClick={() => navigate('/learning')} />
-            <MicroZoneCard title="قصر الجوائز" subtitle="شارات وإنجازات" icon="🏆" color="bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 border-amber-400/30" onClick={() => navigate('/stars')} />
-            <MicroZoneCard title="أنشطة المنزل" subtitle="فعاليات مع العائلة" icon="🏠" color="bg-teal-500/20 hover:bg-teal-500/30 text-teal-100 border-teal-400/30" onClick={() => {}} />
-            <MicroZoneCard title="ملفي السحري" subtitle="الأفاتار والإنجازات" icon="👧" color="bg-pink-500/20 hover:bg-pink-500/30 text-pink-100 border-pink-400/30" onClick={() => navigate('/studio')} />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {QUICK_WATCH.map((w) => {
+              const a = ACCENT[w.accent];
+              return (
+                <button
+                  key={w.title}
+                  onClick={() => navigate(w.route)}
+                  className={`group relative overflow-hidden rounded-3xl text-right ${a.soft} ring-2 ring-stone-200 p-5 hover:shadow-xl active:scale-[0.98] transition-all`}
+                >
+                  <div className={`absolute -bottom-8 -left-8 h-32 w-32 rounded-full bg-gradient-to-br ${a.from} ${a.to} opacity-25 blur-2xl pointer-events-none`} />
+                  <div className="relative flex items-center gap-4">
+                    <div className={`h-16 w-16 rounded-2xl ${a.bg} text-white flex items-center justify-center shadow-lg`}>
+                      <w.Icon className="h-8 w-8" strokeWidth={2.5} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-lg font-black text-stone-800 leading-tight">{w.title}</p>
+                      <p className="text-sm text-stone-500 font-bold">{w.subtitle}</p>
+                    </div>
+                    <PlayCircle className={`h-10 w-10 ${a.text} opacity-80 group-hover:opacity-100`} strokeWidth={2.5} />
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </section>
 
-        {/* Bottom Widgets */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* الشارات القريبة */}
-          <div className="bg-white/10 backdrop-blur-xl rounded-[2rem] p-6 shadow-xl border border-white/15">
-            <h4 className="text-xl font-black text-white mb-4 flex items-center gap-2">🏅 الشارات القريبة</h4>
-            <div className="space-y-4">
-              <BadgeItem icon="🌟" title="شارة القارئة اللامعة" desc="قراءة 5 قصص" />
-              <BadgeItem icon="🧪" title="شارة العالمة الصغيرة" desc="إتمام 3 تجارب تعليمية" />
-              <BadgeItem icon="🤝" title="شارة صديقة الجميع" desc="إكمال 4 مهام لطف" />
+        {/* ─── BIG stars CTA ─────────────────────────────────────────── */}
+        <button
+          onClick={() => navigate('/stars')}
+          className="w-full text-right rounded-3xl bg-gradient-to-br from-amber-400 via-orange-400 to-rose-400 text-white p-6 sm:p-8 shadow-xl shadow-amber-200/70 hover:shadow-2xl active:scale-[0.99] transition-all relative overflow-hidden"
+        >
+          <div className="absolute -bottom-10 -right-10 h-44 w-44 rounded-full bg-white/20 blur-3xl" />
+          <div className="absolute -top-10 -left-10 h-36 w-36 rounded-full bg-white/15 blur-3xl" />
+          <div className="relative flex items-center gap-5">
+            <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-3xl bg-white/25 backdrop-blur-sm flex items-center justify-center shrink-0">
+              <Trophy className="h-12 w-12 sm:h-14 sm:w-14" strokeWidth={2.5} />
             </div>
-            <button className="mt-4 text-violet-300 font-bold text-sm hover:underline w-full text-left" onClick={() => navigate('/stars')}>
-              شاهدي كل الجوائز ←
-            </button>
-          </div>
-
-          {/* نشاط منزلي سريع */}
-          <div className="bg-amber-500/15 rounded-[2rem] p-6 shadow-xl border border-amber-400/25">
-            <h4 className="text-xl font-black text-amber-200 mb-2 flex items-center gap-2">🏠 نشاط منزلي سريع</h4>
-            <h5 className="text-2xl font-black text-amber-300 mb-2">مسرح الدمى السحري</h5>
-            <p className="text-amber-200/80 font-bold mb-4">المدة: 20 دقيقة</p>
-            <ul className="space-y-2 text-amber-100/80 font-medium mb-4 list-disc list-inside">
-              <li>اختاري شخصيتين</li>
-              <li>زيني الدمى</li>
-              <li>اعملي حوار قصير مضحك</li>
-            </ul>
-            <button className="text-amber-300 font-bold text-sm hover:underline w-full text-left">
-              اكتشفي أنشطة أكثر ←
-            </button>
-          </div>
-
-          {/* حقيقة اليوم */}
-          <div className="bg-cyan-500/15 rounded-[2rem] p-6 shadow-xl border border-cyan-400/25 flex flex-col justify-between">
-            <div>
-              <h4 className="text-xl font-black text-cyan-200 mb-4 flex items-center gap-2">🔍 حقيقة اليوم</h4>
-              <p className="text-2xl font-black text-cyan-100 leading-relaxed">
-                الأخطبوط لديه ثلاثة قلوب! 🐙
-              </p>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm sm:text-base font-black opacity-90 mb-1">قصر جوائزكِ</p>
+              <p className="text-4xl sm:text-5xl font-black leading-none mb-1">{stars} ⭐</p>
+              <p className="text-sm sm:text-base font-bold opacity-90">نجمة — شوفي شاراتكِ</p>
             </div>
-            <button className="mt-4 text-cyan-300 font-bold text-sm hover:underline w-full text-left">
-              حقائق أكثر ←
-            </button>
+            <ChevronLeft className="h-10 w-10 opacity-80 shrink-0" strokeWidth={3} />
           </div>
-        </div>
+        </button>
       </main>
 
-      {/* Settings Modal */}
+      {/* ─── Settings slide-over ───────────────────────────────────── */}
       <AnimatePresence>
         {showSettings && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[70] p-4 overflow-y-auto">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="bg-white/15 backdrop-blur-2xl w-full max-w-2xl p-8 rounded-[3rem] shadow-2xl relative text-right border border-white/20 my-8"
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-stone-900/40 backdrop-blur-sm flex items-stretch justify-end"
+            onClick={() => setShowSettings(false)}
+          >
+            <motion.aside
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 240 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full sm:max-w-md bg-white h-full overflow-y-auto"
             >
-              <button 
-                onClick={() => setShowSettings(false)}
-                className="absolute top-6 left-6 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white/60 hover:text-white transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-
-              <div className="flex items-center gap-4 mb-8">
-                <div className="w-16 h-16 bg-violet-500/20 border border-violet-400/30 text-violet-300 rounded-2xl flex items-center justify-center">
-                  <Settings className="w-8 h-8" />
+              <div className="sticky top-0 bg-white border-b border-stone-100 px-5 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="h-9 w-9 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center"><Settings className="h-4 w-4" /></div>
+                  <h2 className="font-black text-stone-800">إعداداتي</h2>
                 </div>
-                <div>
-                  <h2 className="text-2xl font-black text-white">إعدادات ملفي السحري</h2>
-                  <p className="text-white/60 font-bold">تحكمي في بياناتكِ وقواكِ السحرية</p>
-                </div>
+                <button onClick={() => setShowSettings(false)} className="h-9 w-9 rounded-xl hover:bg-stone-100 flex items-center justify-center text-stone-500">
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
-              <form onSubmit={handleUpdateProfile} className="space-y-8">
-                {/* Basic Info */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-black text-white/60 mb-2 mr-2 flex items-center gap-2">
-                      <User className="w-4 h-4" /> اسمكِ الحقيقي
-                    </label>
-                    <input
-                      type="text"
-                      value={editData.name || ''}
-                      onChange={(e) => setEditData(prev => ({ ...prev, name: e.target.value }))}
-                      className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 focus:border-violet-400/60 outline-none font-bold text-white placeholder:text-white/40 transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-black text-white/60 mb-2 mr-2 flex items-center gap-2">
-                      <Shield className="w-4 h-4" /> لقبكِ البطولي
-                    </label>
-                    <input
-                      type="text"
-                      value={editData.heroName || ''}
-                      onChange={(e) => setEditData(prev => ({ ...prev, heroName: e.target.value }))}
-                      className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 focus:border-violet-400/60 outline-none font-bold text-white placeholder:text-white/40 transition-all"
-                    />
-                  </div>
+              <form onSubmit={handleSaveSettings} className="p-5 space-y-5">
+                <Field label="اسمكِ الحقيقي">
+                  <input className="kf-input" value={editData.name || ''} onChange={(e) => setEditData((p) => ({ ...p, name: e.target.value }))} />
+                </Field>
+                <Field label="لقبكِ البطولي">
+                  <input className="kf-input" value={editData.heroName || ''} onChange={(e) => setEditData((p) => ({ ...p, heroName: e.target.value }))} />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="مدينتكِ">
+                    <input className="kf-input" value={editData.city || ''} onChange={(e) => setEditData((p) => ({ ...p, city: e.target.value }))} placeholder="القاهرة" />
+                  </Field>
+                  <Field label="مدرستكِ">
+                    <input className="kf-input" value={editData.school || ''} onChange={(e) => setEditData((p) => ({ ...p, school: e.target.value }))} placeholder="—" />
+                  </Field>
                 </div>
 
-                {/* Power Selection */}
-                <div>
-                  <label className="block text-sm font-black text-white/60 mb-4 mr-2 flex items-center gap-2">
-                    <Zap className="w-4 h-4" /> قوتكِ السحرية المفضلة
-                  </label>
-                  <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-                    {HERO_POWERS.map((power) => (
-                      <button
-                        key={power.id}
-                        type="button"
-                        onClick={() => setEditData(prev => ({ ...prev, heroPower: power.id }))}
-                        className={`p-4 rounded-2xl border transition-all flex flex-col items-center gap-2 text-white ${
-                          editData.heroPower === power.id 
-                            ? 'bg-violet-500/30 border-violet-400/60 scale-105 shadow-md' 
-                            : 'bg-white/10 border-white/20 hover:border-violet-400/40'
-                        }`}
-                      >
-                        <span className="text-2xl">{power.icon}</span>
-                        <span className="text-[10px] font-black leading-tight">{power.name}</span>
-                      </button>
-                    ))}
+                <div className="rounded-2xl bg-stone-50 ring-1 ring-stone-200 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="h-8 w-8 rounded-lg bg-white text-rose-500 flex items-center justify-center"><Lock className="h-4 w-4" /></div>
+                    <p className="font-extrabold text-stone-800 text-sm">حماية الدخول</p>
                   </div>
-                </div>
-
-                {/* Location & School */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-black text-white/60 mb-2 mr-2 flex items-center gap-2">
-                      <MapPin className="w-4 h-4" /> مدينتكِ
-                    </label>
+                  <Field label="الرمز السري (4-8 أرقام)">
                     <input
-                      type="text"
-                      value={editData.city || ''}
-                      onChange={(e) => setEditData(prev => ({ ...prev, city: e.target.value }))}
-                      className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 focus:border-violet-400/60 outline-none font-bold text-white placeholder:text-white/40 transition-all"
-                      placeholder="مثلاً: القاهرة"
+                      type="password"
+                      maxLength={8}
+                      value={editData.pin || ''}
+                      onChange={(e) => setEditData((p) => ({ ...p, pin: e.target.value.replace(/\D/g, '') }))}
+                      className="kf-input text-center tracking-[0.5em] text-lg"
+                      placeholder="••••"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-black text-white/60 mb-2 mr-2 flex items-center gap-2">
-                      <School className="w-4 h-4" /> مدرستكِ
-                    </label>
-                    <input
-                      type="text"
-                      value={editData.school || ''}
-                      onChange={(e) => setEditData(prev => ({ ...prev, school: e.target.value }))}
-                      className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 focus:border-violet-400/60 outline-none font-bold text-white placeholder:text-white/40 transition-all"
-                      placeholder="اسم مدرستكِ الجميلة"
-                    />
-                  </div>
+                  </Field>
+                  <p className="text-[11px] text-stone-500 font-bold mt-2 flex items-center gap-1">
+                    <Shield className="h-3 w-3" /> يمكنكِ تغييره أو استعادته من الصفحة الرئيسية.
+                  </p>
                 </div>
 
-                {/* Security Section */}
-                <div className="bg-white/10 p-6 rounded-3xl border border-white/20">
-                  <h3 className="text-lg font-black text-white mb-4 flex items-center gap-2">
-                    <Lock className="w-5 h-5" /> حماية ملفكِ السحري
-                  </h3>
-                  
-                  <div className="space-y-6">
-                    <div>
-                      <label className="block text-sm font-black text-white/60 mb-2">الرمز السري (PIN)</label>
-                      <input
-                        type="password"
-                        value={editData.pin || ''}
-                        onChange={(e) => setEditData(prev => ({ ...prev, pin: e.target.value.replace(/\D/g, '') }))}
-                        className="w-full p-4 rounded-2xl border border-white/20 focus:border-violet-400/60 outline-none text-center text-2xl tracking-[0.5em] font-black text-white bg-white/10"
-                        placeholder="••••"
-                        maxLength={8}
-                      />
-                      <p className="text-[10px] text-white/40 mt-2 text-center font-bold">يمكنكِ اختيار رمز من 4 إلى 8 أرقام</p>
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 bg-white/10 rounded-2xl border border-white/20">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-pink-500/20 border border-pink-400/30 text-pink-300 rounded-xl flex items-center justify-center">
-                          <LayoutGrid className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="font-black text-white">استخدام النقش السحري</p>
-                          <p className="text-xs text-white/50 font-bold">زيادة الخصوصية بنقش فريد</p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setUsePattern(!usePattern)}
-                        className={`w-12 h-6 rounded-full transition-colors relative ${usePattern ? 'bg-pink-500' : 'bg-white/20'}`}
-                      >
-                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${usePattern ? 'right-7' : 'right-1'}`} />
-                      </button>
-                    </div>
-
-                    {usePattern && (
-                      <div className="p-6 bg-white/10 rounded-2xl border border-pink-400/20 text-center">
-                        <p className="text-sm font-black text-pink-300 mb-4">ارسمي نقشكِ السحري هنا</p>
-                        <div className="grid grid-cols-3 gap-4 max-w-[200px] mx-auto">
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => (
-                            <div 
-                              key={i} 
-                              className={`w-12 h-12 rounded-full border-2 flex items-center justify-center cursor-pointer transition-all ${
-                                pattern.includes(i) ? 'bg-pink-500 border-pink-400 scale-110 shadow-lg' : 'bg-white/10 border-white/20'
-                              }`}
-                              onClick={() => {
-                                if (pattern.includes(i)) {
-                                  setPattern(pattern.filter(p => p !== i));
-                                } else {
-                                  setPattern([...pattern, i]);
-                                }
-                              }}
-                            >
-                              {pattern.includes(i) && <div className="w-3 h-3 bg-white rounded-full" />}
-                            </div>
-                          ))}
-                        </div>
-                        <button 
-                          type="button"
-                          onClick={() => handlePatternComplete(pattern)}
-                          className="mt-6 text-xs font-black text-pink-500 hover:underline"
-                        >
-                          تأكيد النقش
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex gap-4">
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="flex-1 bg-gradient-to-r from-violet-500 to-fuchsia-600 text-white font-black py-4 rounded-2xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-1 text-lg flex items-center justify-center gap-2"
-                  >
-                    {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'حفظ التعديلات السحرية ✨'}
+                <div className="flex gap-2 sticky bottom-0 -mx-5 px-5 py-3 bg-white/95 backdrop-blur border-t border-stone-100">
+                  <button type="button" onClick={() => setShowSettings(false)} className="flex-1 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-extrabold py-3">إلغاء</button>
+                  <button type="submit" disabled={savingSettings} className="flex-1 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-extrabold py-3 disabled:opacity-60 inline-flex items-center justify-center gap-2">
+                    {savingSettings ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    حفظ
                   </button>
                 </div>
               </form>
-            </motion.div>
-          </div>
+            </motion.aside>
+          </motion.div>
         )}
       </AnimatePresence>
+
+      <style>{`
+        .kf-input { width: 100%; border-radius: 0.75rem; border: 1px solid #e7e5e4; background: white; padding: 0.65rem 0.85rem; font-weight: 700; color: #1c1917; outline: none; transition: all .15s ease; }
+        .kf-input:focus { border-color: #fb7185; box-shadow: 0 0 0 4px rgba(251,113,133,0.15); }
+        .kf-input::placeholder { color: #a8a29e; font-weight: 600; }
+      `}</style>
     </div>
   );
 }
 
-function ZoneCard({ title, subtitle, icon, color, onClick }: { title: string, subtitle: string, icon: string, color: string, onClick: () => void }) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub components
+// ─────────────────────────────────────────────────────────────────────────────
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="block text-[11px] font-extrabold text-stone-500 mb-1.5 px-1">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Personal welcome strip — rotating daily affirmation, named, no clutter
+// ─────────────────────────────────────────────────────────────────────────────
+const AFFIRMATIONS = [
+  { emoji: '🌸', text: 'أنتِ قويّة، ذكيّة، ومميّزة جداً' },
+  { emoji: '⭐', text: 'كل يوم تتعلّمين شيئاً جديداً يصنع منكِ بطلة' },
+  { emoji: '💖', text: 'قلبكِ الطيّب أجمل ما فيكِ' },
+  { emoji: '🌟', text: 'الشجاعة أن تحاولي، حتى لو كان الأمر صعباً' },
+  { emoji: '🦋', text: 'كوني نفسكِ — العالم يحتاج بطلة مثلكِ' },
+  { emoji: '🌈', text: 'الأحلام الكبيرة تبدأ بخطوة صغيرة' },
+  { emoji: '✨', text: 'عقلكِ كنز، اقرئي وتعلّمي وامرحي' },
+];
+
+const WEEKDAYS_AR = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const MONTHS_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 5) return 'مساء الخير';
+  if (h < 12) return 'صباح الخير';
+  if (h < 17) return 'نهاركِ سعيد';
+  if (h < 21) return 'مساء النور';
+  return 'مساء الخير';
+}
+
+function WelcomeStrip({
+  heroName, stars, level, streak, lastSection, onContinue,
+}: {
+  heroName: string; stars: number; level: number; streak: number;
+  lastSection?: ChildProfile['lastSection']; onContinue: (route: string) => void;
+}) {
+  const today = new Date();
+  const idx = today.getDate() % AFFIRMATIONS.length;
+  const aff = AFFIRMATIONS[idx];
+  const dateLabel = `${WEEKDAYS_AR[today.getDay()]} ${today.getDate()} ${MONTHS_AR[today.getMonth()]}`;
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="relative overflow-hidden rounded-3xl bg-white ring-2 ring-stone-100 px-5 sm:px-7 py-5"
+    >
+      {/* soft accents */}
+      <span className="absolute top-0 right-0 left-0 h-1.5 bg-gradient-to-r from-rose-400 via-pink-400 via-amber-400 to-orange-400" />
+      <span className="absolute -bottom-12 -left-12 h-40 w-40 rounded-full bg-gradient-to-br from-rose-200 to-pink-200 opacity-40 blur-3xl pointer-events-none" />
+      <span className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-gradient-to-br from-amber-200 to-orange-200 opacity-40 blur-3xl pointer-events-none" />
+
+      <div className="relative flex items-center gap-4 sm:gap-6">
+        {/* Animated hero badge */}
+        <motion.div
+          animate={{ rotate: [0, 6, -6, 0], scale: [1, 1.05, 1] }}
+          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+          className="shrink-0 h-16 w-16 sm:h-20 sm:w-20 rounded-3xl bg-gradient-to-br from-rose-400 via-pink-500 to-fuchsia-500 flex items-center justify-center text-3xl sm:text-4xl shadow-xl shadow-pink-200"
+        >
+          {aff.emoji}
+        </motion.div>
+
+        {/* Personal text */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <p className="text-[11px] sm:text-xs font-extrabold text-rose-500">{getGreeting()} · {dateLabel}</p>
+            {streak >= 2 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 text-orange-600 px-2 py-0.5 text-[11px] font-black ring-1 ring-orange-200">
+                🔥 {streak} يوم متتالي
+              </span>
+            )}
+          </div>
+          <h2 className="text-xl sm:text-2xl font-black text-stone-900 mb-1 leading-tight truncate">
+            أهلاً يا <span className="bg-gradient-to-r from-rose-500 to-pink-500 bg-clip-text text-transparent">{heroName}</span>
+          </h2>
+          <p className="text-sm sm:text-base text-stone-600 font-bold leading-snug line-clamp-2">{aff.text}</p>
+        </div>
+
+        {/* Compact stats badge (desktop only) */}
+        <div className="hidden md:flex flex-col gap-2 shrink-0">
+          <div className="flex items-center gap-2 rounded-2xl bg-amber-50 ring-1 ring-amber-200 px-3 py-2">
+            <Star className="h-5 w-5 text-amber-500 fill-current" />
+            <div>
+              <p className="text-[10px] font-extrabold text-amber-600 leading-none">نجوم</p>
+              <p className="text-base font-black text-amber-700 leading-tight">{stars}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-2xl bg-violet-50 ring-1 ring-violet-200 px-3 py-2">
+            <Crown className="h-5 w-5 text-violet-500" />
+            <div>
+              <p className="text-[10px] font-extrabold text-violet-600 leading-none">المستوى</p>
+              <p className="text-base font-black text-violet-700 leading-tight">{level}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Continue last activity */}
+      {lastSection && (
+        <button
+          onClick={() => onContinue(lastSection.route)}
+          className="relative mt-4 w-full sm:w-auto inline-flex items-center gap-3 rounded-2xl bg-gradient-to-r from-rose-50 to-pink-50 hover:from-rose-100 hover:to-pink-100 ring-1 ring-rose-200 px-4 py-3 text-right transition-all active:scale-[0.98]"
+        >
+          <div className={`h-10 w-10 rounded-xl ${ACCENT[lastSection.accent as keyof typeof ACCENT]?.bg || 'bg-rose-500'} text-white flex items-center justify-center shadow-md shrink-0`}>
+            <PlayCircle className="h-5 w-5" strokeWidth={2.5} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-extrabold text-rose-500 leading-none mb-1">أكملي مغامرتكِ</p>
+            <p className="text-sm font-black text-stone-800 truncate">{lastSection.title}</p>
+          </div>
+          <ChevronLeft className="h-5 w-5 text-rose-500 shrink-0" strokeWidth={3} />
+        </button>
+      )}
+    </motion.section>
+  );
+}
+
+function SectionCard({ item, onClick }: { item: SectionItem; onClick: () => void }) {
+  const a = ACCENT[item.accent];
   return (
     <motion.button
-      whileHover={{ scale: 1.03, y: -5 }}
-      whileTap={{ scale: 0.97 }}
+      whileHover={{ y: -4 }}
+      whileTap={{ scale: 0.96 }}
       onClick={onClick}
-      className={`relative overflow-hidden rounded-[2.5rem] text-right text-white shadow-xl transition-all group ${color} aspect-[4/3] flex flex-col justify-between p-6 md:p-8`}
+      className={`group relative overflow-hidden rounded-3xl bg-white ring-2 ring-stone-200 hover:ring-stone-300 hover:shadow-2xl text-center p-5 sm:p-7 transition-all min-h-[180px] sm:min-h-[220px] flex flex-col items-center justify-center`}
     >
-      <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/5 to-transparent z-10" />
-      
-      {/* Decorative background circle */}
-      <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/20 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
-      
-      <div className="relative z-20 flex justify-between items-start w-full">
-        <div className="text-6xl md:text-7xl drop-shadow-lg group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300 origin-bottom-right">
-          {icon}
+      <span className={`absolute -top-16 -right-16 h-40 w-40 rounded-full bg-gradient-to-br ${a.from} ${a.to} opacity-20 blur-2xl group-hover:opacity-40 transition-opacity`} />
+      <span className={`absolute -bottom-12 -left-12 h-32 w-32 rounded-full bg-gradient-to-br ${a.from} ${a.to} opacity-15 blur-2xl`} />
+
+      <div className="relative flex flex-col items-center">
+        <div className={`h-20 w-20 sm:h-24 sm:w-24 rounded-3xl ${a.bg} text-white flex items-center justify-center mb-3 shadow-xl shadow-stone-300/60 group-hover:scale-110 group-active:scale-95 transition-transform`}>
+          <item.Icon className="h-10 w-10 sm:h-12 sm:w-12" strokeWidth={2.5} />
         </div>
-        <div className="w-10 h-10 bg-white/30 backdrop-blur-md rounded-full flex items-center justify-center shrink-0">
-          <PlayCircle className="w-6 h-6 text-white" />
-        </div>
-      </div>
-      
-      <div className="relative z-20 w-full mt-auto">
-        <h3 className="text-2xl md:text-3xl font-black mb-1 drop-shadow-md">{title}</h3>
-        <p className="text-white/90 font-bold text-sm md:text-base drop-shadow-md">{subtitle}</p>
+        <h3 className="text-lg sm:text-xl font-black text-stone-800 leading-tight mb-1">{item.title}</h3>
+        <p className="text-xs sm:text-sm text-stone-500 font-bold leading-snug line-clamp-2">{item.subtitle}</p>
       </div>
     </motion.button>
-  );
-}
-
-function MiniZoneCard({ title, subtitle, icon, color, onClick }: { title: string, subtitle: string, icon: string, color: string, onClick: () => void }) {
-  return (
-    <motion.div
-      whileHover={{ scale: 1.02, y: -2 }}
-      whileTap={{ scale: 0.98 }}
-    >
-      <Card 
-        onClick={onClick}
-        className={`relative overflow-hidden rounded-2xl text-right shadow-sm transition-all group ${color} p-4 flex items-center gap-4 border-2 cursor-pointer`}
-      >
-        <div className="text-4xl drop-shadow-sm group-hover:scale-110 transition-transform">{icon}</div>
-        <div>
-          <h3 className="text-lg font-black mb-1">{title}</h3>
-          <p className="font-bold text-sm opacity-90">{subtitle}</p>
-        </div>
-      </Card>
-    </motion.div>
-  );
-}
-
-function MicroZoneCard({ title, subtitle, icon, color, onClick }: { title: string, subtitle: string, icon: string, color: string, onClick: () => void }) {
-  return (
-    <motion.div
-      whileHover={{ scale: 1.05, y: -2 }}
-      whileTap={{ scale: 0.95 }}
-    >
-      <Card 
-        onClick={onClick}
-        className={`relative overflow-hidden rounded-2xl text-center shadow-sm transition-all group ${color} p-4 flex flex-col items-center justify-center border-2 aspect-square cursor-pointer`}
-      >
-        <div className="text-4xl mb-2 drop-shadow-sm group-hover:scale-110 transition-transform">{icon}</div>
-        <h3 className="text-sm font-black mb-1">{title}</h3>
-        <p className="text-xs font-bold opacity-80">{subtitle}</p>
-      </Card>
-    </motion.div>
-  );
-}
-
-function BadgeItem({ icon, title, desc }: { icon: string, title: string, desc: string }) {
-  return (
-    <div className="flex items-center gap-3 bg-white/10 p-3 rounded-xl border border-white/15">
-      <div className="text-2xl">{icon}</div>
-      <div>
-        <h5 className="font-black text-white text-sm">{title}</h5>
-        <p className="text-xs font-bold text-white/60">{desc}</p>
-      </div>
-    </div>
   );
 }

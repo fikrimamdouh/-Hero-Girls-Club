@@ -18,7 +18,7 @@ export const generateMagicStory = async (heroName: string, heroPower: string, th
       اجعل القصة باللغة العربية الفصحى البسيطة، مليئة بالخيال والقيم الإيجابية، وتنتهي بسؤال تفاعلي للطفلة.`;
 
     const response = await (ai as any).models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: prompt,
     });
 
@@ -36,7 +36,7 @@ export const generateDailyQuest = async (heroName: string) => {
       اجعل المهمة تبدو كأنها مهمة سحرية من عالم الأبطال. ارجع النتيجة كنص قصير جداً ومشجع.`;
 
     const response = await (ai as any).models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: prompt,
     });
     return response.text;

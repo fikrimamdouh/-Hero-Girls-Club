@@ -1,0 +1,35 @@
+{
+    "name": "guess-my-word",
+    "version": "1.0.0",
+    "description": "A word guessing game, where you only know whether my word is before or after your guess. (An unofficial clone of the game previously available on simbase.org)",
+    "main": "index.html",
+    "scripts": {
+        "test": "npm run check",
+        "check": "biome check && echo '✅  All checks passed!' || echo '❌  Check failed!'",
+        "check:fix": "biome check --write",
+        "server": "static-server --port 8080 &",
+        "integration": "npm run server; cypress run",
+        "pre-push": "git diff --exit-code && git diff --exit-code --staged && npm run integration || echo '⚠️  uncommitted files or integ tests failed'",
+        "prepare": "husky"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/hryanjones/guess-my-word.git"
+    },
+    "keywords": ["words", "game", "browser"],
+    "author": "H. Ryan Jones",
+    "license": "MIT",
+    "bugs": {
+        "url": "https://github.com/hryanjones/guess-my-word/issues"
+    },
+    "homepage": "https://github.com/hryanjones/guess-my-word#readme",
+    "devDependencies": {
+        "@biomejs/biome": "^1.9.4",
+        "cypress": "^14.3.2",
+        "husky": "^9.1.7",
+        "static-server": "^3.0.0"
+    },
+    "dependencies": {
+        "wordcloud": "^1.1.1"
+    }
+}

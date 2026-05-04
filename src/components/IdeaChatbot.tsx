@@ -331,7 +331,7 @@ export default function IdeaChatbot() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.9 }}
             style={{ x: dragX, y: dragY }}
-            className="fixed bottom-24 left-6 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border-2 border-purple-200 overflow-hidden z-50 flex flex-col"
+            className="fixed bottom-24 left-2 right-2 sm:right-auto sm:left-6 sm:w-96 max-w-[calc(100vw-1rem)] bg-white rounded-2xl shadow-2xl border-2 border-purple-200 overflow-hidden z-50 flex flex-col max-h-[80vh]"
             dir="rtl"
           >
             {/* Header */}
@@ -415,7 +415,7 @@ export default function IdeaChatbot() {
               {[
                 { emoji: '🎨', label: 'ارسم لي', prompt: 'ارسم لي صورة جميلة ومبهجة' },
                 { emoji: '🧩', label: 'لغز',     prompt: 'هاتي لي لغزاً ممتعاً' },
-                { emoji: '😂', label: 'نكتة',    prompt: 'احكيلي نكتة مضحكة' },
+                { emoji: '😂', label: 'قولي نكتة', prompt: 'قولي نكتة مضحكة' },
                 { emoji: '✨', label: 'شجعيني',  prompt: 'قولي حاجة حلوة وشجعيني' },
                 { emoji: '📖', label: 'قصة',        prompt: 'احكي لي قصة مسلية قصيرة' },
                 { emoji: '🎵', label: 'أغنية',      prompt: 'غنيلي أغنية حلوة' },

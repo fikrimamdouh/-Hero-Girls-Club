@@ -91,7 +91,7 @@ export default function KidsMissionsPage() {
                       <div className={`px-4 py-1 rounded-full text-xs font-black uppercase tracking-widest ${
                         mission.difficulty === 'سهل' ? 'bg-green-100 text-green-600' :
                         mission.difficulty === 'متوسط' ? 'bg-blue-100 text-blue-600' :
-                        'bg-purple-100 text-purple-600'
+                        'bg-pink-100 text-fuchsia-600'
                       }`}>
                         {mission.difficulty}
                       </div>
@@ -132,7 +132,7 @@ export default function KidsMissionsPage() {
           </section>
 
           {/* Weekly Challenge */}
-          <section className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-[3rem] p-8 md:p-12 text-white relative overflow-hidden shadow-2xl shadow-indigo-200">
+          <section className="bg-gradient-to-br from-rose-500 to-fuchsia-600 rounded-[3rem] p-8 md:p-12 text-white relative overflow-hidden shadow-2xl shadow-rose-200">
             <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
             <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
               <div className="text-center md:text-right">
@@ -141,7 +141,7 @@ export default function KidsMissionsPage() {
                   التحدي الأسبوعي الكبير
                 </div>
                 <h2 className="text-3xl md:text-4xl font-black mb-4">بطلة القراءة المثالية</h2>
-                <p className="text-indigo-100 text-lg font-bold mb-8 max-w-xl">
+                <p className="text-rose-100 text-lg font-bold mb-8 max-w-xl">
                   اقرئي 5 قصص مختلفة من مجرة القصص وشاركي العبرة مع عائلتكِ لتحصلي على شارة نادرة!
                 </p>
                 <div className="flex items-center justify-center md:justify-start gap-6">
@@ -158,7 +158,7 @@ export default function KidsMissionsPage() {
               </div>
               <button 
                 onClick={() => navigate('/kids/stories')}
-                className="bg-white text-indigo-700 px-10 py-5 rounded-[2rem] font-black text-xl shadow-xl hover:scale-105 transition-all flex items-center gap-3"
+                className="bg-white text-rose-700 px-10 py-5 rounded-[2rem] font-black text-xl shadow-xl hover:scale-105 transition-all flex items-center gap-3"
               >
                 اذهبي للقصص
                 <ArrowRight className="w-6 h-6" />

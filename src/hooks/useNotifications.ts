@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { useEffect, useState, useCallback } from 'react';
-import { messaging } from '../firebase';
+import { messaging, db } from '../firebase';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { getToken, onMessage } from 'firebase/messaging';
 import { toast } from 'sonner';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -42,8 +43,15 @@ export const useNotifications = (activeChildId?: string) => {
             if (vapidKey) {
               const token = await getToken(msg, { vapidKey });
               setFcmToken(token);
-              // In a real app, you would save this token to the user's Firestore document
-              // to send them push notifications from a backend.
+              if (token && activeChildId) {
+                try {
+                  await updateDoc(doc(db, 'children_profiles', activeChildId), {
+                    fcmTokens: arrayUnion(token),
+                  });
+                } catch (e) {
+                  console.warn('failed to save fcm token', e);
+                }
+              }
             } else {
               console.warn('VITE_FIREBASE_VAPID_KEY is not set in environment variables.');
             }

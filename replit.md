@@ -94,6 +94,43 @@ Set these as secrets in the Replit environment:
 - Click any house → navigate to `/house/view_{uid}` to visit
 - Own house banner shows visitor count + avatar chips when guests are present
 
+## عالم الألعاب — Games
+
+### KidsGamesPage (`/games`)
+19-game card grid with gradient icons, Arabic titles, badge labels (skill/speed/logic…).
+All games are either local React-built games or MIT-licensed HTML5 games served from `public/games/`.
+
+### MariaGamesView (`/maria-games`)
+Poki-style dark grid interface with category tabs (أكشن، مغامرات، سيارات، بنات، ألغاز، ذكاء…) and search.
+Clicking a game navigates to its React route (no iframe modal). Shows 19 real games.
+
+### Transferred MIT Games (all in `public/games/`)
+| Folder | Game | Source |
+|--------|------|--------|
+| `snake/` | الثعبان الجائع | RabiRoshan/snake_game |
+| `tetris/` | تتريس | llop/classic-tetris-js |
+| `flappy/` | الطائر الرشيق | Antonious-Awad/flappy-bird |
+| `2048/` | لعبة 2048 | Gamesflow/2048-game |
+| `breakout/` | تكسير الطوب | igameproject/Breakout |
+| `whack/` | اضرب الخلد! | Anantram-developer/Whack-A-Mole- |
+| `pong/` | بينج بونج | ramazancetinkaya/ping-pong-game |
+| `racer/` | سباق السيارات | Steve-IX/Speed_Racer_Game |
+| `platformer/` | مغامرة البطلة | ZeroDayArcade/HTML5_Platformer |
+| `minesweeper/` | كاشفة الألغام | mayankrajendrat/minesweeper |
+| `shooter/` | الطائرة المقاتلة | mikkun/evade-and-destroy |
+All HTML files arabized (lang=ar, Arabic titles/UI text).
+
+### GameIframe.tsx (`src/pages/GameIframe.tsx`)
+Generic iframe wrapper used by all 11 MIT games. Props: title, subtitle, emoji, src, bgFrom, bgTo, headerBg, textColor.
+Routes: `/games/{snake,tetris,flappy,2048,breakout,whack,pong,racer,platformer,minesweeper,shooter}`
+
+## عالم البطلات الكبير — Zone Fixes
+
+- **"ركن الاكتشاف"** now navigates to `/values?cat=discovery`; ValuesView reads `?cat` URL param and auto-selects the discovery tab with a distinct title/icon
+- **"أنشطة المنزل"** now navigates to `/home-activities` — a new page (HomeActivities.tsx) with 12 family activity cards, category filter, progress bar, and point tracking stored in localStorage
+- **MagicAcademy**: Auto-seeds 8 default missions (reading, math, art, kindness, etc.) from `DEFAULT_MISSIONS` array when a child has zero missions in Firestore; uses `useRef` to prevent duplicate seeding
+- **StarsPage**: Shows current child's points in the header; highlights the child's own row with a gold ring and "أنتِ ✨" badge; shows a separate card if the child is outside top 10
+
 ## Replit Migration Notes
 
 - Port changed from 3000 → 5000 (Replit webview requirement)

@@ -1,0 +1,182 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "rE64mNnYMtIYIGyNY8Azv"
+uri = "file://attached_assets/generated_images/generated_image.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "p83oKqjdUXUbMzcYMq1fg"
+uri = "file://public/games/thumbs/memory.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "fBMK-W8P3r359RvEv01rc"
+uri = "file://public/games/thumbs/simon.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "DuQr9MaQ3aAZfD9VRQeZM"
+uri = "file://public/games/thumbs/tictactoe.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "as6KZhonIY1QW13k7bnSS"
+uri = "file://public/games/thumbs/words.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "8vXBL6W-RgqvnWbb0yENW"
+uri = "file://public/games/thumbs/catch.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "FiDReqPmWkbrfGLOZIlG_"
+uri = "file://public/games/thumbs/fruit-catcher.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "hk7S7v8Qy_-9JiPLBcc84"
+uri = "file://public/games/thumbs/coloring.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "l99KHtqHkGpD5ashqBEs5"
+uri = "file://public/illustrations/hero-girls.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "LDR8njlFFz6-q7hWTt34p"
+uri = "file://public/illustrations/parent-elegant.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "BthsAbNhffx6q0D4eHitp"
+uri = "file://public/illustrations/mascot-hero.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "O-Z83QLQWdfzSznRRMvm_"
+uri = "file://artifacts/mockup-sandbox/public/images/blossom-hero.png"
+type = "image"
+title = "Hero girl illustration"
+
+[[generated]]
+id = "02c3RTIHnYFlhbCKOZ__O"
+uri = "file://artifacts/mockup-sandbox/public/images/blossom-mascot.png"
+type = "image"
+title = "Mascot fawn illustration"
+
+[[generated]]
+id = "USGptP48TJ5geOrVTkOcv"
+uri = "file://artifacts/mockup-sandbox/public/images/blossom-games.png"
+type = "image"
+title = "Games and stories art"
+
+[[generated]]
+id = "Fzy13kYcfT_JHHKaoLgq7"
+uri = "file://artifacts/mockup-sandbox/public/images/blossom-art.png"
+type = "image"
+title = "Arts and learning art"
+
+[[generated]]
+id = "ATTKe6x1oyFnbwZYCvnop"
+uri = "file://artifacts/mockup-sandbox/public/images/aurora-hero.png"
+type = "image"
+title = "Cosmic watercolor girls floating among stars"
+
+[[generated]]
+id = "VT1oPyGLkFVflG1pLB7Oe"
+uri = "file://artifacts/mockup-sandbox/public/images/aurora-spot-1.png"
+type = "image"
+title = "Cosmic watercolor playing games on comet"
+
+[[generated]]
+id = "TaCD8LmgBi_ExrflP-DZy"
+uri = "file://artifacts/mockup-sandbox/public/images/aurora-spot-2.png"
+type = "image"
+title = "Cosmic watercolor reading floating storybook"
+
+[[generated]]
+id = "s5oVP3Ujmr6z4Lu3Djgbv"
+uri = "file://artifacts/mockup-sandbox/public/images/aurora-spot-3.png"
+type = "image"
+title = "Cosmic watercolor painting constellation art"
+
+[[generated]]
+id = "BdUbc1a8lmrwSkQJ0Fx2i"
+uri = "file://artifacts/mockup-sandbox/public/images/pixel-hero.png"
+type = "image"
+title = "Heroine girl and unicorn companion"
+
+[[generated]]
+id = "M2H7OYsDLBvvf68Zxk96j"
+uri = "file://artifacts/mockup-sandbox/public/images/pixel-games.png"
+type = "image"
+title = "Stylized game controller with coins"
+
+[[generated]]
+id = "fpJuwiorSdC63CY38pY-j"
+uri = "file://artifacts/mockup-sandbox/public/images/pixel-stories.png"
+type = "image"
+title = "Magical glowing story book"
+
+[[generated]]
+id = "xzKUzpgsiwTB3Nd_oMWXw"
+uri = "file://artifacts/mockup-sandbox/public/images/pixel-art.png"
+type = "image"
+title = "Floating paint palette art"
+
+[[generated]]
+id = "2vZf31KCaYB67zkxBV0UU"
+uri = "file://artifacts/mockup-sandbox/public/images/fusion-hero.png"
+type = "image"
+title = "heroines cinematic key art"
+
+[[generated]]
+id = "n2V3RtuwJ2mliyIWsUb8W"
+uri = "file://artifacts/mockup-sandbox/public/images/fusion-editorial.png"
+type = "image"
+title = "editorial reading portrait"
+
+[[generated]]
+id = "641OwYlrnxlVkAoJTjDWo"
+uri = "file://artifacts/mockup-sandbox/public/images/fusion-action.png"
+type = "image"
+title = "dynamic action heroine"
+
+[[generated]]
+id = "hT17DoDdHnW_5Cngg8q_F"
+uri = "file://artifacts/mockup-sandbox/public/images/fusion-spot1.png"
+type = "image"
+title = "magical glowing paintbrush"
+
+[[generated]]
+id = "xOyuonIsHGDiRYJLK5Iuv"
+uri = "file://artifacts/mockup-sandbox/public/images/fusion-spot2.png"
+type = "image"
+title = "floating game controller"
+
+[[generated]]
+id = "jVSZV-Ge_zzcP2GGnMBhE"
+uri = "file://artifacts/mockup-sandbox/public/images/fusion-spot3.png"
+type = "image"
+title = "glowing storybook castle"
+
+[[generated]]
+id = "KBaiHIwsPWIeA2lc8p2WC"
+uri = "file://artifacts/mockup-sandbox/public/images/fusion-mascot.png"
+type = "image"
+title = "cute star mascot"

@@ -100,7 +100,7 @@ export default function WordScramble() {
       {/* Header */}
       <div className="w-full max-w-2xl flex justify-between items-center mb-8">
         <button 
-          onClick={() => navigate('/child')}
+          onClick={() => navigate('/maria-games')}
           className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white shadow-md hover:bg-white/30 transition-all"
         >
           <ArrowRight className="w-6 h-6" />

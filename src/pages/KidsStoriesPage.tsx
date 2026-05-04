@@ -38,14 +38,14 @@ export default function KidsStoriesPage() {
   };
 
   return (
-    <KidsPageLayout title="عالم القصص" subtitle="قصص تفاعلية بتجربة موحدة" emoji="📚" tone="from-violet-50 to-pink-50">
+    <KidsPageLayout title="عالم القصص" subtitle="قصص تفاعلية بتجربة موحدة" emoji="📚" tone="from-rose-50 to-pink-50">
         <div className="flex flex-wrap gap-2 mb-4">
           {(['الكل', 'مغامرات', 'خيال', 'تعليمي'] as const).map((cat) => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
               className={`px-4 py-2 rounded-full text-sm font-bold ${
-                activeCategory === cat ? 'bg-violet-600 text-white' : 'bg-white text-violet-700 border border-violet-200'
+                activeCategory === cat ? 'bg-rose-500 text-white' : 'bg-white text-rose-700 border border-pink-200'
               }`}
             >
               {cat}
@@ -54,8 +54,8 @@ export default function KidsStoriesPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <aside className="md:col-span-1 bg-white rounded-3xl p-4 border-2 border-violet-100 shadow-lg">
-            <h1 className="text-2xl font-black text-violet-700 mb-4 flex items-center gap-2">
+          <aside className="md:col-span-1 bg-white rounded-3xl p-4 border-2 border-pink-100 shadow-lg">
+            <h1 className="text-2xl font-black text-rose-700 mb-4 flex items-center gap-2">
               <BookOpen className="w-6 h-6" />
               قصص الأطفال
             </h1>
@@ -70,8 +70,8 @@ export default function KidsStoriesPage() {
                   }}
                   className={`w-full text-right rounded-2xl p-3 border transition ${
                     story.id === activeId
-                      ? 'bg-violet-100 border-violet-300'
-                      : 'bg-slate-50 border-slate-200 hover:bg-violet-50'
+                      ? 'bg-pink-100 border-pink-300'
+                      : 'bg-slate-50 border-slate-200 hover:bg-rose-50'
                   }`}
                 >
                   <p className="font-bold text-slate-800">{story.title}</p>

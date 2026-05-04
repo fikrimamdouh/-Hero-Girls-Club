@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<title>GMW - new words</title>
+<meta charset="UTF-8" name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet" href="./index.css"/>
+</head>
+<body>
+<header>
+    <h1>
+        <a href="./" class="home">Guess my word</a>
+        <select id="difficulty-changer">
+            <option value="normal">normal</option>
+            <option value="hard">hard</option>
+        </select>
+    </h1>
+    <a class="bigger-target" href="./README.html">about</a>
+</header>
+
+<h2>New just use random repeats way</h2>
+<p>
+    This breaks the existing list into 3 chunks of 526 (and skips the first three as there's no normal words there). For each chunk, take it, randomize it, then put it back on the end of the list.
+</p>
+<p>
+    Once you're done with that, put a checkmark ✔️ out front so can use the next one next time.
+</p>
+<pre>
+// in JS console
+
+# List 1 ✔️👈 **next time**
+
+copy("'" + possibleWords.normal.slice(3,529).join("',\n'") + "',");
+copy("'" + possibleWords.hard.slice(3,529).join("',\n'") + "',")
+
+# List 2 ✔️
+
+copy("'" + possibleWords.normal.slice(529,1055).join("',\n'") + "',");
+copy("'" + possibleWords.hard.slice(529,1055).join("',\n'") + "',");
+
+# List 3 ✔️
+
+copy("'" + possibleWords.normal.slice(1055,1581).join("',\n'") + "',");
+copy("'" + possibleWords.hard.slice(1055,1581).join("',\n'") + "',");
+</pre>
+<hr>
+
+<h3>Appendix - old manual way</h3>
+
+Look at top some 1000 most guessed words
+<pre style="max-width: 100%; white-space: break-spaces;">
+cat backupLeaderboards/*normal.csv | grep -v timeInMilliSeconds | sed -e 's/^.*,"//' -e 's/".*$//' | sed -e 's/,[a-z]*$//' | tr "," \n | grep -E "...." | sort | uniq -c | sort -rn | head -n 7000 | tail -n 1000 | sed -e 's/^.* //' | sort > /tmp/guessed-normal-words
+
+cat backupLeaderboards/*hard.csv | grep -v timeInMilliSeconds | sed -e 's/^.*,"//' -e 's/".*$//' | sed -e 's/,[a-z]*$//' | tr "," \n | grep -E "...." | sort | uniq -c | sort -rn | head -n 8000 | tail -n 1000 | sed -e 's/^.* //' | sort > /tmp/guessed-hard-words
+</pre>
+<button id="analyze">Analyze new words</button>
+<div style="display: flex">
+    <div><h3>accepted</h3><textarea id="accepted" rows="30"></textarea></div>
+    <div style="flex-grow: 1;"><h3>new <small><button onclick='reduceNewWords()'>reduce</button></small></h3>
+        <textarea style="width: 100%" id="new" rows="30"></textarea>
+    </div>
+    <div><h3>exclude</h3><textarea id="exclude" rows="30"></textarea></div>
+</div>
+
+<script src="https://d2t3dun0il9ood.cloudfront.net/dictionary.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@2.6.11"></script>
+<script src="index.js"></script>
+<script src="normal-word-exclude-list.js"></script>
+<script src="hard-word-exclude-list.js"></script>
+<script>
+    getElement('analyze').onclick = validateNewWords;
+    getElement('new').onkeyup = moveWord;
+
+
+    const existingExcludesList = {
+        normal: normalListExclude.split('\n').filter(w => w),
+        hard: hardListExclude.split('\n').filter(w => w),
+    };
+
+    const newExcludesList = {
+        normal: [],
+        hard: [],
+    };
+
+    const acceptedNewWords = {
+        normal: [],
+        hard: [],
+    }
+
+    getInvalidReason.guesses = [];
+
+    function validateNewWords(e) {
+        let newWords = getWordsFromElement('new');
+        const difficulty = getElement('difficulty-changer').value;
+        newExcludesList[difficulty] = getWordsFromElement('exclude');
+        acceptedNewWords[difficulty] = getWordsFromElement('accepted');
+
+        const previousWords = possibleWords.normal
+            .concat(possibleWords.hard) // hard and normal words should not overlap
+            .concat(acceptedNewWords[difficulty]);
+        const wordsToExclude = new Set(
+            previousWords
+                .concat(existingExcludesList[difficulty])
+                .concat(newExcludesList[difficulty])
+        );
+
+        const actualNewWords = [];
+        const warnWords = [];
+
+        const POTENTIAL_BAD_ENDINGS = /(ing|ed|ly)$/;
+        newWords.sort().forEach(word => {
+            if (wordsToExclude.has(word)) {
+                console.log(`${word} is in previous guesses, accepted guesses, or old/new exclude list`);
+                return;
+            }
+            if (getInvalidReason(word)) {
+                console.log(`${word} is somehow not in dictionary`);
+                return;
+            }
+            const likeOldWord = previousWords.find(oldWord => oldWord.startsWith(word) || word.startsWith(oldWord));
+            if (likeOldWord) {
+                actualNewWords.push(`${word} is a lot like ${likeOldWord}`);
+                return;
+            }
+
+            const badEndingMatch = word.match(POTENTIAL_BAD_ENDINGS);
+            if (badEndingMatch) {
+                actualNewWords.push(`${word} ends with "${badEndingMatch[0]}"`);
+                return;
+            }
+            actualNewWords.push(word);
+        });
+
+        setWordsInElement(actualNewWords, 'new');
+    }
+
+    function moveWord(e) {
+        const {key} = e;
+        if (key !== 'ArrowLeft' && key !== 'ArrowRight') return;
+        const textarea = getElement('new');
+        const cursorPosition = textarea.selectionStart;
+        console.log('cursorPosition', cursorPosition);
+        const lineText = getLineText();
+        const word = lineText.replace(/ .+/, '');
+        if (!word) return;
+        if (key === 'ArrowLeft') {
+            // textarea.selectionStart = cursorPosition + 1;
+            getElement('accepted').value += word + '\n';
+        } else {
+            getElement('exclude').value += word + '\n';
+            // textarea.selectionStart = cursorPosition - 1;
+            // textarea.selectionEnd = cursorPosition - 1;
+        }
+        textarea.value = textarea.value.replace(lineText + '\n', '');
+
+        textarea.selectionStart = 2;
+        textarea.selectionEnd = textarea.selectionStart;
+
+        function getLineText() {
+            const fullValue = textarea.value;
+
+            // console.log(`char @ cursor is ${fullValue[cursorPosition]}`);
+            let start = cursorPosition;
+            while (start > 0 && fullValue[start - 1] !== '\n') {
+                start -= 1;
+            }
+            let end = cursorPosition;
+            while (end < (fullValue.length) && fullValue[end] !== '\n') {
+                end += 1;
+            }
+            const fullLine = fullValue.slice(start, end);
+            const movedBetweenLines = fullLine.includes('\n');
+            if (movedBetweenLines) return '';
+            return fullLine;
+        }
+    }
+
+    function reduceNewWords() {
+        const newWords = getWordsFromElement('new');
+        const reducedNewWords = newWords.filter((word, i) =>
+            Math.floor(i / 5) % 2 === 0 // take first 5, drop next 5, take next 5, etc.
+        );
+        setWordsInElement(reducedNewWords, 'new');
+    }
+
+    function getWordsFromElement(id) {
+        return getElement(id).value
+            .split('\n')
+            .filter(w => w.trim()); // exclude anything empty
+    }
+    function setWordsInElement(words, id) {
+        return getElement(id).value = words.join('\n');
+    }
+
+    function getElement(id) {
+        return document.querySelector(`#${id}`);
+    }
+</script>
+
+<!-- Uncomment to run tests in browser -->
+<!-- <script src="./tests.js"></script> -->
+
+</body>
+</html>

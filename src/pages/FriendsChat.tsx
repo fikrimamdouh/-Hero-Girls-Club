@@ -24,7 +24,7 @@ const CHAT_THEMES = {
   love: { bg: 'bg-pink-50', bubble: 'bg-pink-500', name: 'حب (وردي)' },
   forest: { bg: 'bg-green-50', bubble: 'bg-green-500', name: 'غابة (أخضر)' },
   ocean: { bg: 'bg-cyan-50', bubble: 'bg-cyan-500', name: 'محيط (سماوي)' },
-  night: { bg: 'bg-slate-900', bubble: 'bg-indigo-500', name: 'ليلي (بنفسجي داكن)' }
+  night: { bg: 'bg-slate-900', bubble: 'bg-rose-500', name: 'ليلي (بنفسجي داكن)' }
 };
 
 function isChildProfile(obj: any): obj is ChildProfile {
@@ -312,6 +312,18 @@ export default function FriendsChat() {
         timestamp: Date.now()
       });
       toast.success(`تم إرسال طلب الصداقة إلى ${toChild.name}!`);
+      try {
+        const { createNotification } = await import('../lib/notifications');
+        await createNotification({
+          recipientId: toChild.uid,
+          type: 'friend_request',
+          title: 'طلب صداقة جديد 🤝',
+          body: `${activeChild.heroName || activeChild.name} تريد أن تكون صديقتكِ`,
+          link: '/friends-chat',
+          fromId: activeChild.uid,
+          fromName: activeChild.heroName || activeChild.name,
+        });
+      } catch { /* non-critical */ }
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'friend_requests');
     }
@@ -321,6 +333,22 @@ export default function FriendsChat() {
     try {
       await updateDoc(doc(db, 'friend_requests', requestId), { status: 'accepted' });
       toast.success('تم قبول طلب الصداقة!');
+      // notify the requester that we accepted
+      try {
+        const reqDoc = friendRequests.find((r) => r.id === requestId);
+        if (reqDoc?.fromId) {
+          const { createNotification } = await import('../lib/notifications');
+          await createNotification({
+            recipientId: reqDoc.fromId,
+            type: 'friend_accepted',
+            title: 'صديقة جديدة! ✨',
+            body: `${activeChild.heroName || activeChild.name} قبلت طلب صداقتكِ`,
+            link: '/friends-chat',
+            fromId: activeChild.uid,
+            fromName: activeChild.heroName || activeChild.name,
+          });
+        }
+      } catch { /* non-critical */ }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'friend_requests');
     }
@@ -399,6 +427,30 @@ export default function FriendsChat() {
       }
 
       await setDoc(doc(db, 'chats', chatId), chatUpdateData, { merge: true });
+
+      // Notify recipients (everyone except sender)
+      try {
+        const { createNotification } = await import('../lib/notifications');
+        const recipients = participants.filter((p) => p !== activeChild.uid);
+        const preview = type === 'text'
+          ? text.slice(0, 60)
+          : type === 'image' ? '📷 أرسلت صورة'
+          : type === 'voice' ? '🎤 أرسلت رسالة صوتية'
+          : text;
+        await Promise.all(
+          recipients.map((rid) =>
+            createNotification({
+              recipientId: rid,
+              type: 'message',
+              title: `رسالة من ${activeChild.heroName || activeChild.name}`,
+              body: preview,
+              link: '/friends-chat',
+              fromId: activeChild.uid,
+              fromName: activeChild.heroName || activeChild.name,
+            })
+          )
+        );
+      } catch (e) { /* non-critical */ }
 
       setNewMessage('');
       setReplyingTo(null);
@@ -715,7 +767,7 @@ export default function FriendsChat() {
               <ArrowRight className="w-6 h-6 text-slate-600" />
             </button>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center shadow-md">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-fuchsia-400 rounded-full flex items-center justify-center shadow-md">
                 <MessageCircle className="w-5 h-5 text-white" />
               </div>
               <h1 className="text-xl font-bold text-slate-800">ماسنجر الأبطال</h1>
@@ -792,7 +844,7 @@ export default function FriendsChat() {
             {/* Find Friends */}
             <div className="space-y-6">
               <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-purple-500" />
+                <Sparkles className="w-5 h-5 text-fuchsia-500" />
                 أبطال يمكنك مصادقتهم
               </h2>
               <div className="grid gap-4">
@@ -803,7 +855,7 @@ export default function FriendsChat() {
                 ).map(child => (
                   <div key={child.uid} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between hover:shadow-md transition-shadow">
                     <div className="flex items-center gap-3">
-                      <Avatar className="w-12 h-12 bg-gradient-to-br from-blue-100 to-purple-100 border shadow-inner">
+                      <Avatar className="w-12 h-12 bg-gradient-to-br from-blue-100 to-pink-100 border shadow-inner">
                         <AvatarFallback className="text-2xl mt-2 bg-transparent">
                           {child.avatar?.hairStyle === 'spiky' ? '👦' : '👧'}
                         </AvatarFallback>
@@ -828,12 +880,12 @@ export default function FriendsChat() {
         ) : (
           <div className="bg-white rounded-2xl shadow-md border border-slate-200 h-full flex overflow-hidden">
             {/* Messenger Sidebar */}
-            <div className="w-full md:w-80 border-l border-slate-200 bg-white flex flex-col">
+            <div className={`${activeChat ? 'hidden md:flex' : 'flex'} w-full md:w-80 border-l border-slate-200 bg-white flex-col`}>
               {/* User Profile Header */}
               <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-colors" onClick={() => setIsProfileModalOpen(true)}>
                   <div className="relative">
-                    <Avatar className="w-12 h-12 bg-gradient-to-br from-purple-100 to-pink-100 shadow-sm border border-slate-200">
+                    <Avatar className="w-12 h-12 bg-gradient-to-br from-pink-100 to-pink-100 shadow-sm border border-slate-200">
                       <AvatarFallback className="text-2xl mt-2 bg-transparent">
                         {activeChild.avatar?.hairStyle === 'spiky' ? '👦' : '👧'}
                       </AvatarFallback>
@@ -992,12 +1044,19 @@ export default function FriendsChat() {
             </div>
 
             {/* Chat Area */}
-            <div className={`flex-1 flex flex-col relative ${currentTheme.bg}`}>
+            <div className={`${activeChat ? 'flex' : 'hidden md:flex'} flex-1 flex-col relative ${currentTheme.bg}`}>
               {activeChat ? (
                 <>
                   {/* Chat Header */}
                   <div className="p-3 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between shadow-sm z-10">
                     <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setActiveChat(null)}
+                        className="md:hidden p-2 -mr-1 text-slate-600 hover:bg-slate-100 rounded-full"
+                        title="رجوع"
+                      >
+                        <ArrowRight className="w-5 h-5" />
+                      </button>
                       <div className="relative">
                         <Avatar className="w-10 h-10 bg-gradient-to-br from-slate-100 to-slate-200 shadow-sm">
                           <AvatarFallback className="text-xl mt-2 bg-transparent">
@@ -1313,7 +1372,7 @@ export default function FriendsChat() {
 
                           <div className="p-4">
                             <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                              <Palette className="w-4 h-4 text-purple-500" />
+                              <Palette className="w-4 h-4 text-fuchsia-500" />
                               تخصيص الدردشة
                             </h4>
                             <div className="space-y-2">
@@ -1499,7 +1558,7 @@ export default function FriendsChat() {
               <CardContent className="p-6 space-y-6">
                 <div className="flex flex-col items-center">
                   <div className="relative mb-4">
-                    <Avatar className="w-24 h-24 bg-gradient-to-br from-purple-100 to-pink-100 shadow-md border-4 border-white">
+                    <Avatar className="w-24 h-24 bg-gradient-to-br from-pink-100 to-pink-100 shadow-md border-4 border-white">
                       <AvatarFallback className="text-5xl mt-4 bg-transparent">
                         {activeChild.avatar?.hairStyle === 'spiky' ? '👦' : '👧'}
                       </AvatarFallback>
@@ -1513,7 +1572,7 @@ export default function FriendsChat() {
                     </button>
                   </div>
                   <h3 className="font-bold text-xl text-slate-800">{activeChild.name}</h3>
-                  <p className="text-sm text-purple-600">{activeChild.heroName}</p>
+                  <p className="text-sm text-fuchsia-600">{activeChild.heroName}</p>
                 </div>
 
                 <div className="space-y-2">

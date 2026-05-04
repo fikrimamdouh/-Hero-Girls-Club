@@ -28,7 +28,7 @@ export default function KidsDiscoveryPage() {
         </button>
         <button 
           onClick={() => setActiveSection('space')}
-          className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black transition-all ${activeSection === 'space' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-indigo-700 border-2 border-indigo-100 hover:bg-indigo-50'}`}
+          className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black transition-all ${activeSection === 'space' ? 'bg-rose-500 text-white shadow-lg' : 'bg-white text-rose-700 border-2 border-rose-100 hover:bg-rose-50'}`}
         >
           <Rocket className="w-5 h-5" />
           أسرار الفضاء
@@ -96,12 +96,12 @@ export default function KidsDiscoveryPage() {
             className="grid grid-cols-1 md:grid-cols-2 gap-6"
           >
             {spaceFacts.map((item) => (
-              <div key={item.title} className="bg-indigo-900 text-white p-8 rounded-[2.5rem] border-4 border-indigo-700 shadow-2xl flex items-center gap-6 relative overflow-hidden group">
+              <div key={item.title} className="bg-rose-900 text-white p-8 rounded-[2.5rem] border-4 border-rose-700 shadow-2xl flex items-center gap-6 relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 group-hover:scale-150 transition-transform" />
                 <div className="text-6xl relative z-10">{item.emoji}</div>
                 <div className="relative z-10">
-                  <h3 className="text-2xl font-black mb-2 text-indigo-200">{item.title}</h3>
-                  <p className="text-indigo-100 font-bold leading-relaxed">{item.fact}</p>
+                  <h3 className="text-2xl font-black mb-2 text-rose-100">{item.title}</h3>
+                  <p className="text-rose-100 font-bold leading-relaxed">{item.fact}</p>
                 </div>
               </div>
             ))}

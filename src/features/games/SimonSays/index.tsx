@@ -137,7 +137,7 @@ export default function SimonSays() {
     <div className="min-h-screen bg-slate-900 font-sans flex flex-col items-center py-8 px-4" dir="rtl">
       <div className="w-full max-w-md flex justify-between items-center mb-12">
         <button 
-          onClick={() => navigate('/child')}
+          onClick={() => navigate('/maria-games')}
           className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all"
         >
           <ArrowRight className="w-6 h-6" />

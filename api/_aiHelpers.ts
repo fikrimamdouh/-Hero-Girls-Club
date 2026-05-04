@@ -86,7 +86,7 @@ export const generateTextWithAI = async (prompt: string, options?: { scribbleDat
         if (options?.scribbleData) {
           const base64Data = options.scribbleData.split(',')[1];
           const result = await (gemini as any).models.generateContent({
-            model: 'gemini-1.5-flash',
+            model: 'gemini-2.5-flash',
             contents: [
               {
                 role: 'user',
@@ -102,7 +102,7 @@ export const generateTextWithAI = async (prompt: string, options?: { scribbleDat
         }
 
         const result = await (gemini as any).models.generateContent({
-          model: 'gemini-1.5-flash',
+          model: 'gemini-2.5-flash',
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
         });
 

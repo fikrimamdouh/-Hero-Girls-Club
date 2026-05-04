@@ -88,7 +88,7 @@ export default function VillageView() {
   const mySession = activeChild ? sessions[activeChild.uid] : null;
 
   return (
-    <div dir="rtl" className="min-h-screen bg-gradient-to-br from-fuchsia-950 via-violet-950 to-indigo-950 text-white">
+    <div dir="rtl" className="min-h-screen bg-gradient-to-br from-rose-900 via-pink-800 to-rose-700 text-white">
       {/* Header */}
       <header className="sticky top-0 z-20 backdrop-blur-xl bg-black/30 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between gap-4">

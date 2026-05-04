@@ -12,7 +12,7 @@ const OPTIONS = {
   body: {
     color: [
       { id: 'bg-pink-300', value: 'bg-pink-300' },
-      { id: 'bg-purple-300', value: 'bg-purple-300' },
+      { id: 'bg-pink-300', value: 'bg-pink-300' },
       { id: 'bg-sky-300', value: 'bg-sky-300' },
       { id: 'bg-amber-300', value: 'bg-amber-300' },
       { id: 'bg-emerald-300', value: 'bg-emerald-300' },
@@ -39,7 +39,7 @@ const OPTIONS = {
       { id: 'ec_blue', value: 'text-blue-500' },
       { id: 'ec_green', value: 'text-emerald-500' },
       { id: 'ec_brown', value: 'text-amber-800' },
-      { id: 'ec_purple', value: 'text-purple-500' },
+      { id: 'ec_purple', value: 'text-fuchsia-500' },
       { id: 'ec_red', value: 'text-red-500' },
     ]
   },
@@ -66,7 +66,7 @@ const OPTIONS = {
       { id: 'cape2', value: 'bg-slate-800' },
       { id: 'cape3', value: 'bg-blue-300' },
       { id: 'cape4', value: 'bg-emerald-500' },
-      { id: 'cape5', value: 'bg-purple-600' },
+      { id: 'cape5', value: 'bg-fuchsia-500' },
     ]
   },
   magic: {
@@ -99,9 +99,9 @@ const OPTIONS = {
     wall: [
       { id: 'wall1', value: 'bg-pink-200' },
       { id: 'wall2', value: 'bg-emerald-200' },
-      { id: 'wall3', value: 'bg-indigo-900' },
+      { id: 'wall3', value: 'bg-rose-900' },
       { id: 'wall4', value: 'bg-sky-200' },
-      { id: 'wall5', value: 'bg-purple-200' },
+      { id: 'wall5', value: 'bg-pink-200' },
       { id: 'wall6', value: 'bg-cyan-800' },
     ],
     furniture: [
@@ -158,10 +158,10 @@ const THEME_PRESETS = [
     id: 'moonlight',
     title: 'ضوء القمر',
     apply: {
-      body: { color: 'bg-sky-300', hair: '🧚‍♀️', eyes: '★', eyeColor: 'text-purple-500' },
+      body: { color: 'bg-sky-300', hair: '🧚‍♀️', eyes: '★', eyeColor: 'text-fuchsia-500' },
       clothes: { dress: '👘', shoes: '👢', cape: 'bg-slate-800' },
       magic: { crown: '✨', wand: '🪄', wings: '❄️' },
-      room: { wall: 'bg-indigo-900', furniture: '', decorations: '' }
+      room: { wall: 'bg-rose-900', furniture: '', decorations: '' }
     }
   }
 ];
@@ -360,7 +360,7 @@ export default function CharacterStudio() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-fuchsia-50 via-sky-50 to-indigo-100 flex flex-col font-sans overflow-hidden" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-b from-fuchsia-50 via-sky-50 to-rose-100 flex flex-col font-sans overflow-hidden" dir="rtl">
       {/* Header */}
       <header className="sticky top-0 left-0 right-0 z-50 p-4 md:p-5 flex justify-between items-center bg-white/70 backdrop-blur-xl border-b border-white/70 shadow-sm">
         <button onClick={() => navigate('/child')} className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-slate-600 hover:text-fuchsia-600 shadow border border-slate-100 transition-transform hover:scale-105">

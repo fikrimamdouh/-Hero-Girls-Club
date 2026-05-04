@@ -146,8 +146,8 @@ export default function ParentDashboard() {
   const handleAddChild = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auth.currentUser) return;
-    if (!newChild.name || !newChild.pin || newChild.pin.length !== 4) {
-      toast.error('يرجى إدخال الاسم ورمز سري من 4 أرقام');
+    if (!newChild.name || !newChild.pin || newChild.pin.length < 4 || newChild.pin.length > 8) {
+      toast.error('يرجى إدخال الاسم ورمز سري من 4 إلى 8 أرقام');
       return;
     }
 
@@ -333,7 +333,7 @@ export default function ParentDashboard() {
         <motion.div 
           animate={{ y: [0, -30, 0], opacity: [0.1, 0.3, 0.1] }}
           transition={{ duration: 10, repeat: Infinity }}
-          className="absolute top-20 right-20 w-96 h-96 bg-purple-200/20 rounded-full blur-3xl"
+          className="absolute top-20 right-20 w-96 h-96 bg-pink-200/20 rounded-full blur-3xl"
         />
       </div>
 
@@ -351,7 +351,7 @@ export default function ParentDashboard() {
           {auth.currentUser?.email === 'rorofikri@gmail.com' && (
             <button 
               onClick={() => navigate('/admin')}
-              className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 p-3 rounded-2xl transition-colors border-2 border-indigo-100 flex items-center gap-2 px-4 shadow-sm"
+              className="bg-rose-50 hover:bg-rose-100 text-rose-600 p-3 rounded-2xl transition-colors border-2 border-rose-100 flex items-center gap-2 px-4 shadow-sm"
             >
               <LayoutDashboard className="w-5 h-5" />
               <span className="font-bold hidden sm:inline">لوحة الإدارة</span>
@@ -639,23 +639,23 @@ export default function ParentDashboard() {
               </div>
               
               {/* Suggestion Form */}
-              <div className="p-6 bg-gradient-to-br from-indigo-50 to-white rounded-3xl border-2 border-indigo-100 shadow-sm relative overflow-hidden">
+              <div className="p-6 bg-gradient-to-br from-rose-50 to-white rounded-3xl border-2 border-rose-100 shadow-sm relative overflow-hidden">
                 <div className="flex items-center gap-2 mb-4">
-                  <Lightbulb className="w-5 h-5 text-indigo-500" />
-                  <h3 className="font-bold text-indigo-900 text-sm">أرسلي اقتراحاً للمديرة</h3>
+                  <Lightbulb className="w-5 h-5 text-rose-500" />
+                  <h3 className="font-bold text-rose-900 text-sm">أرسلي اقتراحاً للمديرة</h3>
                 </div>
                 <form onSubmit={handleSendSuggestion} className="space-y-3">
                   <textarea
                     value={suggestion}
                     onChange={(e) => setSuggestion(e.target.value)}
                     placeholder="لديكِ فكرة جديدة؟ أخبرينا بها..."
-                    className="w-full p-3 rounded-xl border-2 border-indigo-50 focus:border-indigo-200 outline-none text-sm min-h-[100px] resize-none"
+                    className="w-full p-3 rounded-xl border-2 border-rose-50 focus:border-rose-200 outline-none text-sm min-h-[100px] resize-none"
                     required
                   />
                   <button
                     type="submit"
                     disabled={isSendingSuggestion || !suggestion.trim()}
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all text-xs flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
+                    className="w-full py-3 bg-rose-500 hover:bg-rose-700 text-white font-bold rounded-xl transition-all text-xs flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
                   >
                     {isSendingSuggestion ? (
                       <div className="w-3 h-3 border-2 border-white border-t-transparent animate-spin rounded-full" />
@@ -733,11 +733,11 @@ export default function ParentDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-lavender-600 mb-1">الرمز السري (4 أرقام)</label>
+                  <label className="block text-sm font-bold text-lavender-600 mb-1">الرمز السري (4 إلى 8 أرقام)</label>
                   <input
                     type="password"
                     required
-                    maxLength={4}
+                    maxLength={8}
                     value={newChild.pin}
                     onChange={(e) => setNewChild({...newChild, pin: e.target.value})}
                     className="w-full p-3 rounded-xl border-2 border-lavender-100 focus:border-lavender-400 outline-none tracking-widest"
@@ -847,11 +847,11 @@ export default function ParentDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-lavender-600 mb-1">الرمز السري (4 أرقام)</label>
+                  <label className="block text-sm font-bold text-lavender-600 mb-1">الرمز السري (4 إلى 8 أرقام)</label>
                   <input
                     type="password"
                     required
-                    maxLength={4}
+                    maxLength={8}
                     value={editingChild.pin}
                     onChange={(e) => setEditingChild({...editingChild, pin: e.target.value})}
                     className="w-full p-3 rounded-xl border-2 border-lavender-100 focus:border-lavender-400 outline-none tracking-widest"

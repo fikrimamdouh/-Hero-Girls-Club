@@ -168,7 +168,7 @@ export default function MemoryMatch() {
       {/* Header */}
       <div className="relative z-10 w-full max-w-4xl flex justify-between items-center mb-8">
         <button 
-          onClick={() => navigate('/child')}
+          onClick={() => navigate('/maria-games')}
           className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all"
         >
           <ArrowRight className="w-6 h-6" />
@@ -284,7 +284,7 @@ export default function MemoryMatch() {
                   العب مرة أخرى 🪄
                 </button>
                 <button
-                  onClick={() => navigate('/child')}
+                  onClick={() => navigate('/maria-games')}
                   className="w-full bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl text-lg hover:bg-slate-200 transition-all"
                 >
                   العودة للوحة القيادة

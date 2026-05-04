@@ -95,6 +95,7 @@ export default function AIDesignStudio() {
   const activePersona = personaById(selectedPersona);
 
   const handleGenerate = async (inputText?: string) => {
+    if (isGenerating) return;
     const finalPrompt = (inputText || prompt).trim();
     if (!finalPrompt) {
       toast.error('من فضلكِ اكتبي فكرتكِ أولاً ✍️');

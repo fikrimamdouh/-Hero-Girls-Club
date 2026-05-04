@@ -106,7 +106,7 @@ service cloud.firestore {
     }
 
     function isValidChildProfile(data) {
-      return hasOnlyAllowedFields(['uid', 'parentId', 'name', 'parentName', 'email', 'phone', 'pin', 'avatar', 'points', 'level', 'heroName', 'heroPower', 'heroBadge', 'status', 'createdAt', 'school', 'city', 'hobbies', 'customStatus', 'houseConfig', 'isOnline', 'lastSeen', 'ageGroup', 'pet']) &&
+      return hasOnlyAllowedFields(['uid', 'parentId', 'name', 'parentName', 'email', 'phone', 'pin', 'avatar', 'points', 'level', 'heroName', 'heroPower', 'heroBadge', 'status', 'createdAt', 'school', 'city', 'hobbies', 'customStatus', 'houseConfig', 'isOnline', 'lastSeen', 'ageGroup', 'pet', 'fcmTokens']) &&
              data.uid is string && data.uid.size() > 0 &&
              data.parentId is string && data.parentId.size() > 0 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
@@ -129,7 +129,8 @@ service cloud.firestore {
              (!('isOnline' in data) || data.isOnline is bool) &&
              (!('lastSeen' in data) || data.lastSeen is number) &&
              (!('ageGroup' in data) || data.ageGroup in ['3-5', '6-8', '9-12']) &&
-             (!('pet' in data) || data.pet is map);
+             (!('pet' in data) || data.pet is map) &&
+             (!('fcmTokens' in data) || (data.fcmTokens is list && data.fcmTokens.size() <= 10));
     }
 
     function isValidMission(data) {
@@ -314,6 +315,9 @@ service cloud.firestore {
       allow read: if true;
       // Anyone can send messages (children use PIN login)
       allow create: if true;
+      // Only allow updating the reactions field; no other field may change
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']) &&
+                    (!('reactions' in request.resource.data) || request.resource.data.reactions is map);
     }
 
     match /stories/{id} {
@@ -342,6 +346,61 @@ service cloud.firestore {
       allow read: if true;
       allow create: if true;
       allow update, delete: if false;
+    }
+
+    // ===============================================================
+    // In-app Notifications (children use local PIN auth — open model)
+    // ===============================================================
+    function isValidNotification(data) {
+      return data.keys().hasOnly(['recipientId', 'type', 'title', 'body', 'link', 'read', 'createdAt', 'fromId', 'fromName', 'callId']) &&
+             data.recipientId is string &&
+             data.recipientId.size() > 0 &&
+             data.type is string && data.type.size() < 50 &&
+             data.title is string && data.title.size() < 200 &&
+             data.body is string && data.body.size() < 500 &&
+             data.read is bool &&
+             data.createdAt is number &&
+             (!('link' in data) || data.link is string) &&
+             (!('fromId' in data) || data.fromId is string) &&
+             (!('fromName' in data) || data.fromName is string) &&
+             (!('callId' in data) || data.callId is string);
+    }
+
+    // ===============================================================
+    // Multiplayer Arena matches (open model — children use PIN auth)
+    // ===============================================================
+    function isValidArenaMatch(data) {
+      return data.keys().hasOnly(['hostId','hostName','hostAvatar','guestId','guestName','guestAvatar','status','game','board','turn','hostMarker','winner','createdAt','updatedAt']) &&
+             data.hostId is string && data.hostId.size() > 0 &&
+             data.guestId is string && data.guestId.size() > 0 &&
+             data.hostName is string &&
+             data.guestName is string &&
+             data.status in ['pending','active','ended'] &&
+             data.game == 'xo' &&
+             data.board is list &&
+             data.turn in ['X','O'] &&
+             data.hostMarker in ['X','O'] &&
+             data.createdAt is number &&
+             data.updatedAt is number;
+    }
+
+    match /arena_matches/{id} {
+      allow read: if true;
+      allow create: if isValidArenaMatch(request.resource.data) &&
+                    request.resource.data.status == 'pending';
+      allow update: if isValidArenaMatch(request.resource.data) &&
+                    areImmutableFieldsUnchanged(['hostId','guestId','game','hostMarker','createdAt']);
+      allow delete: if false;
+    }
+
+    match /notifications/{id} {
+      allow read: if true;
+      allow create: if isValidNotification(request.resource.data) &&
+                    request.resource.data.read == false;
+      // Only allow flipping `read` flag — recipient/type/etc are immutable.
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) &&
+                    request.resource.data.read is bool;
+      allow delete: if false;
     }
   }
 }

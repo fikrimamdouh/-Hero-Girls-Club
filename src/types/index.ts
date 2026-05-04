@@ -34,6 +34,7 @@ export interface HouseConfig {
   rooms?: Partial<Record<'bedroom' | 'living' | 'garden' | 'kitchen', RoomConfig>>;
   bgMusic?: string;
   tvUrl?: string;
+  roomRewards?: Record<string, boolean>;
 }
 
 export interface ChildProfile {
@@ -63,6 +64,10 @@ export interface ChildProfile {
   createdAt: number;
   lastActive?: number; // Added for presence tracking
   houseConfig?: HouseConfig; // Added for house customization
+  badges?: string[]; // Earned achievement badge IDs
+  streak?: number; // consecutive daily-visit streak
+  streakLastDate?: string; // YYYY-MM-DD of last counted visit
+  lastSection?: { id: string; title: string; route: string; accent: string; at: number };
 }
 
 export interface MagicPet {
@@ -99,6 +104,7 @@ export interface Mission {
   childId: string;
   parentId: string;
   createdAt: number;
+  createdDate?: string;
 }
 
 export interface Story {
@@ -229,7 +235,9 @@ export interface HouseMessage {
   senderHeroName: string;
   senderAvatar: AvatarConfig;
   text: string;
+  imageUrl?: string;
   timestamp: number;
+  reactions?: Record<string, string[]>; // emoji -> array of uids
 }
 
 export interface VisitRequest {

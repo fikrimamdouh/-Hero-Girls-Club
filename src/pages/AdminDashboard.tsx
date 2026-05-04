@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Shield, Users, MessageSquare, Activity, Settings, Database, Trash2, CheckCircle, XCircle, Star, Mail, Phone, MapPin, School, Lock, ArrowRight, Lightbulb } from 'lucide-react';
+import { Shield, Users, MessageSquare, Activity, Settings, Database, Trash2, CheckCircle, XCircle, Star, Mail, Phone, MapPin, School, Lock, ArrowRight, Lightbulb, BookOpen, Plus, X, Megaphone, Send } from 'lucide-react';
+import { broadcastAnnouncement } from '../lib/notifications';
 import { db, auth } from '../firebase';
-import { collection, query, getDocs, doc, deleteDoc, updateDoc, onSnapshot, orderBy, limit, where, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, getDocs, doc, deleteDoc, updateDoc, onSnapshot, orderBy, limit, where, setDoc, writeBatch, addDoc, serverTimestamp } from 'firebase/firestore';
 import { UserProfile, ChildProfile, ActivityLog, FeatureIdea } from '../types';
 import { toast } from 'sonner';
 
@@ -19,10 +20,16 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [mailStatus, setMailStatus] = useState<'connected' | 'disconnected' | 'loading'>('loading');
   const [mailError, setMailError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'users' | 'children' | 'logs' | 'settings' | 'ideas' | 'chats'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'children' | 'logs' | 'settings' | 'ideas' | 'chats' | 'stories' | 'announce'>('users');
+  const [announceTitle, setAnnounceTitle] = useState('');
+  const [announceBody, setAnnounceBody] = useState('');
+  const [announceSending, setAnnounceSending] = useState(false);
   const [selectedChatChild, setSelectedChatChild] = useState<string | null>(null);
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [logStatusFilter, setLogStatusFilter] = useState<'all' | 'success' | 'failed'>('all');
+  const [adminStories, setAdminStories] = useState<any[]>([]);
+  const [newStory, setNewStory] = useState({ title: '', content: '', points: 20 });
+  const [isAddingStory, setIsAddingStory] = useState(false);
 
   // Helper to check if a user/child is online (active in last 5 minutes)
   const isOnline = (lastActive?: number) => {
@@ -63,6 +70,12 @@ export default function AdminDashboard() {
       setIdeaChats(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (err) => handleFirestoreError(err, OperationType.GET, 'idea_chats'));
 
+    // Fetch Stories
+    const qStories = query(collection(db, 'stories'), orderBy('createdAt', 'desc'));
+    const unsubscribeStories = onSnapshot(qStories, (snapshot) => {
+      setAdminStories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => handleFirestoreError(err, OperationType.GET, 'stories'));
+
     // Fetch mail status
     fetch('/api/mail-status')
       .then(res => res.json())
@@ -78,8 +91,42 @@ export default function AdminDashboard() {
       unsubscribeLogs();
       unsubscribeIdeas();
       unsubscribeChats();
+      unsubscribeStories();
     };
   }, []);
+
+  const handleAddStory = async () => {
+    if (!newStory.title.trim() || !newStory.content.trim()) {
+      toast.error('يرجى إدخال عنوان ومحتوى القصة');
+      return;
+    }
+    setIsAddingStory(true);
+    try {
+      await addDoc(collection(db, 'stories'), {
+        title: newStory.title.trim(),
+        content: newStory.content.trim(),
+        points: newStory.points,
+        choices: [],
+        createdAt: Date.now(),
+      });
+      toast.success('تمت إضافة القصة بنجاح!');
+      setNewStory({ title: '', content: '', points: 20 });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'stories');
+    } finally {
+      setIsAddingStory(false);
+    }
+  };
+
+  const handleDeleteStory = async (storyId: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذه القصة؟')) return;
+    try {
+      await deleteDoc(doc(db, 'stories', storyId));
+      toast.success('تم حذف القصة');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `stories/${storyId}`);
+    }
+  };
 
   const handleApproveChild = async (child: ChildProfile) => {
     try {
@@ -111,9 +158,9 @@ export default function AdminDashboard() {
   };
 
   const handleUpdatePin = async (child: ChildProfile) => {
-    const newPin = window.prompt('أدخل الرمز السري الجديد (4 أرقام):', child.pin);
-    if (!newPin || newPin.length !== 4 || isNaN(Number(newPin))) {
-      if (newPin) toast.error('الرمز يجب أن يكون 4 أرقام');
+    const newPin = window.prompt('أدخل الرمز السري الجديد (4-8 أرقام):', child.pin);
+    if (!newPin || newPin.length < 4 || newPin.length > 8 || isNaN(Number(newPin))) {
+      if (newPin) toast.error('الرمز يجب أن يكون من 4 إلى 8 أرقام');
       return;
     }
 
@@ -214,7 +261,7 @@ export default function AdminDashboard() {
             <span className="font-bold">تسجيل الخروج</span>
           </button>
           <div className="flex items-center gap-4">
-            <div className="bg-indigo-600 p-3 rounded-2xl shadow-lg shadow-indigo-200">
+            <div className="bg-rose-500 p-3 rounded-2xl shadow-lg shadow-rose-200">
               <Shield className="w-8 h-8 text-white" />
             </div>
             <div>
@@ -227,25 +274,25 @@ export default function AdminDashboard() {
         <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-slate-200">
           <button 
             onClick={() => setActiveTab('users')}
-            className={`px-6 py-2 rounded-xl font-bold transition-all ${activeTab === 'users' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            className={`px-6 py-2 rounded-xl font-bold transition-all ${activeTab === 'users' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             أولياء الأمور
           </button>
           <button 
             onClick={() => setActiveTab('children')}
-            className={`px-6 py-2 rounded-xl font-bold transition-all ${activeTab === 'children' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            className={`px-6 py-2 rounded-xl font-bold transition-all ${activeTab === 'children' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             البطلات
           </button>
           <button 
             onClick={() => setActiveTab('logs')}
-            className={`px-6 py-2 rounded-xl font-bold transition-all ${activeTab === 'logs' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            className={`px-6 py-2 rounded-xl font-bold transition-all ${activeTab === 'logs' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             السجلات
           </button>
           <button 
             onClick={() => setActiveTab('ideas')}
-            className={`px-6 py-2 rounded-xl font-bold transition-all flex items-center gap-2 ${activeTab === 'ideas' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            className={`px-6 py-2 rounded-xl font-bold transition-all flex items-center gap-2 ${activeTab === 'ideas' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             <Lightbulb className="w-4 h-4" />
             أفكار الأبطال
@@ -257,7 +304,7 @@ export default function AdminDashboard() {
           </button>
           <button 
             onClick={() => setActiveTab('chats')}
-            className={`px-6 py-2 rounded-xl font-bold transition-all flex items-center gap-2 ${activeTab === 'chats' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            className={`px-6 py-2 rounded-xl font-bold transition-all flex items-center gap-2 ${activeTab === 'chats' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             <MessageSquare className="w-4 h-4" />
             محادثات الأطفال
@@ -266,6 +313,20 @@ export default function AdminDashboard() {
                 {ideaChats.filter(c => c.role === 'user' && c.status === 'new').length}
               </span>
             )}
+          </button>
+          <button 
+            onClick={() => setActiveTab('stories')}
+            className={`px-6 py-2 rounded-xl font-bold transition-all flex items-center gap-2 ${activeTab === 'stories' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <BookOpen className="w-4 h-4" />
+            إدارة القصص
+          </button>
+          <button
+            onClick={() => setActiveTab('announce')}
+            className={`px-6 py-2 rounded-xl font-bold transition-all flex items-center gap-2 ${activeTab === 'announce' ? 'bg-rose-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Megaphone className="w-4 h-4" />
+            إعلان للجميع
           </button>
         </div>
       </header>
@@ -289,7 +350,7 @@ export default function AdminDashboard() {
             <p className="text-3xl font-bold text-slate-800">{logs.length}</p>
           </div>
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-            <Database className="w-10 h-10 text-purple-500 mb-2" />
+            <Database className="w-10 h-10 text-fuchsia-500 mb-2" />
             <p className="text-slate-500 text-sm">حالة البريد</p>
             <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between">
@@ -300,7 +361,7 @@ export default function AdminDashboard() {
                   <button 
                     onClick={handleSendTestEmail}
                     disabled={isSendingTest}
-                    className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg hover:bg-indigo-100 transition-all disabled:opacity-50"
+                    className="text-[10px] bg-rose-50 text-rose-600 px-2 py-1 rounded-lg hover:bg-rose-100 transition-all disabled:opacity-50"
                   >
                     {isSendingTest ? 'جاري الإرسال...' : 'إرسال تجربة'}
                   </button>
@@ -381,7 +442,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     <h3 className="text-xl font-bold text-slate-800 mb-1">{child.name}</h3>
-                    <p className="text-indigo-600 font-bold text-sm mb-4">{child.heroName}</p>
+                    <p className="text-rose-600 font-bold text-sm mb-4">{child.heroName}</p>
                     
                     <div className="space-y-2 mb-6">
                       <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -411,7 +472,7 @@ export default function AdminDashboard() {
                         )}
                         <button 
                           onClick={() => handleUpdatePin(child)}
-                          className="p-2 text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                          className="p-2 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
                           title="تعديل الرمز السري"
                         >
                           <Lock className="w-5 h-5" />
@@ -471,7 +532,7 @@ export default function AdminDashboard() {
                 {logs
                   .filter(log => logStatusFilter === 'all' || log.status === logStatusFilter)
                   .map(log => (
-                  <div key={log.id} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-100 shadow-sm hover:border-indigo-100 transition-all">
+                  <div key={log.id} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-100 shadow-sm hover:border-rose-100 transition-all">
                     <div className="flex items-center gap-4">
                       <div className={`p-2 rounded-xl ${
                         log.type === 'login' ? 'bg-blue-100 text-blue-600' : 
@@ -505,14 +566,14 @@ export default function AdminDashboard() {
               </div>
               <div className="grid gap-4">
                 {ideas.map(idea => (
-                  <motion.div key={idea.id} className={`p-6 rounded-2xl border-2 ${idea.status === 'new' ? 'border-purple-400 bg-purple-50' : 'border-slate-200 bg-white'}`}>
+                  <motion.div key={idea.id} className={`p-6 rounded-2xl border-2 ${idea.status === 'new' ? 'border-fuchsia-400 bg-pink-50' : 'border-slate-200 bg-white'}`}>
                     <div className="flex justify-between items-start mb-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="font-bold text-lg text-slate-800">
                             {idea.childName || idea.title || 'مجهول'}
                           </h3>
-                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${idea.source === 'child' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${idea.source === 'child' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
                             {idea.source === 'child' ? '⭐ بطلة' : '👨‍👩‍👧 ولي أمر'}
                           </span>
                         </div>
@@ -572,9 +633,9 @@ export default function AdminDashboard() {
                   <h2 className="text-2xl font-bold text-slate-800">محادثات الأطفال مع المساعد 💬</h2>
                   <p className="text-slate-500">كل ما يكتبه الأطفال في الشات يظهر هنا — اضغط على اسم الطفلة لعرض المحادثة كاملة</p>
                 </div>
-                <div className="bg-indigo-50 border border-indigo-200 rounded-2xl px-4 py-2 text-center">
-                  <p className="text-2xl font-black text-indigo-700">{new Set(ideaChats.map(c => c.childId)).size}</p>
-                  <p className="text-xs text-indigo-500">طفلة تحادثت</p>
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl px-4 py-2 text-center">
+                  <p className="text-2xl font-black text-rose-700">{new Set(ideaChats.map(c => c.childId)).size}</p>
+                  <p className="text-xs text-rose-500">طفلة تحادثت</p>
                 </div>
               </div>
               
@@ -608,7 +669,7 @@ export default function AdminDashboard() {
                           }}
                           className={`w-full text-right p-3 rounded-xl transition-all flex items-center gap-3 relative border ${
                             selectedChatChild === childId 
-                              ? 'bg-indigo-50 border-indigo-200' 
+                              ? 'bg-rose-50 border-rose-200' 
                               : 'hover:bg-slate-50 border-transparent'
                           }`}
                         >
@@ -619,7 +680,7 @@ export default function AdminDashboard() {
                             <div className="flex justify-between items-center gap-2">
                               <span className="font-bold text-slate-800 truncate">{childName}</span>
                               {unreadCount > 0 && (
-                                <span className="bg-indigo-600 text-white text-[10px] px-2 py-0.5 rounded-full shrink-0 animate-bounce">
+                                <span className="bg-rose-500 text-white text-[10px] px-2 py-0.5 rounded-full shrink-0 animate-bounce">
                                   {unreadCount}
                                 </span>
                               )}
@@ -655,11 +716,11 @@ export default function AdminDashboard() {
                             </span>
                             <div className={`max-w-[80%] p-3 rounded-2xl ${
                               msg.role === 'user' 
-                                ? 'bg-indigo-500 text-white rounded-tl-none' 
+                                ? 'bg-rose-500 text-white rounded-tl-none' 
                                 : 'bg-white border border-slate-200 text-slate-700 rounded-tr-none shadow-sm'
                             }`}>
                               <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-                              <p className={`text-[10px] mt-1 ${msg.role === 'user' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                              <p className={`text-[10px] mt-1 ${msg.role === 'user' ? 'text-rose-100' : 'text-slate-400'}`}>
                                 {new Date(msg.createdAt).toLocaleString('ar-EG')}
                               </p>
                             </div>
@@ -674,6 +735,162 @@ export default function AdminDashboard() {
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Stories Management Tab */}
+          {activeTab === 'stories' && (
+            <div className="p-8">
+              <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                <BookOpen className="w-6 h-6 text-rose-500" />
+                إدارة قصص عالم الحكايات
+              </h2>
+
+              {/* Add New Story Form */}
+              <div className="bg-rose-50 border border-rose-100 rounded-3xl p-6 mb-8">
+                <h3 className="text-lg font-bold text-rose-800 mb-4 flex items-center gap-2">
+                  <Plus className="w-5 h-5" />
+                  إضافة قصة جديدة
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-rose-600 mb-1">عنوان القصة</label>
+                    <input
+                      type="text"
+                      value={newStory.title}
+                      onChange={(e) => setNewStory({ ...newStory, title: e.target.value })}
+                      placeholder="مثال: ليلى والقمر الساحر"
+                      className="w-full p-3 rounded-xl border-2 border-rose-100 focus:border-rose-400 outline-none bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-rose-600 mb-1">محتوى القصة</label>
+                    <textarea
+                      value={newStory.content}
+                      onChange={(e) => setNewStory({ ...newStory, content: e.target.value })}
+                      placeholder="اكتبي القصة هنا... يمكن أن تكون عدة فقرات."
+                      rows={6}
+                      className="w-full p-3 rounded-xl border-2 border-rose-100 focus:border-rose-400 outline-none bg-white resize-y leading-loose"
+                    />
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <label className="block text-sm font-bold text-rose-600 mb-1">النقاط</label>
+                      <input
+                        type="number"
+                        min={5}
+                        max={100}
+                        value={newStory.points}
+                        onChange={(e) => setNewStory({ ...newStory, points: Number(e.target.value) })}
+                        className="w-28 p-3 rounded-xl border-2 border-rose-100 focus:border-rose-400 outline-none bg-white"
+                      />
+                    </div>
+                    <button
+                      onClick={handleAddStory}
+                      disabled={isAddingStory}
+                      className="mt-5 bg-rose-500 hover:bg-rose-700 text-white font-bold px-8 py-3 rounded-xl transition-all shadow-lg disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <Plus className="w-5 h-5" />
+                      {isAddingStory ? 'جاري الإضافة...' : 'إضافة القصة'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Existing Stories List */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-slate-400" />
+                  القصص المضافة ({adminStories.length})
+                </h3>
+                {adminStories.length === 0 ? (
+                  <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400">
+                    <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p>لا توجد قصص مضافة بعد. استخدمي النموذج أعلاه لإضافة أول قصة.</p>
+                  </div>
+                ) : (
+                  adminStories.map(story => (
+                    <div key={story.id} className="bg-white border border-slate-200 rounded-2xl p-5 flex items-start justify-between gap-4 hover:shadow-sm transition-all">
+                      <div className="flex-1 text-right">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h4 className="font-bold text-slate-800 text-lg">{story.title}</h4>
+                          <span className="bg-amber-100 text-amber-700 text-xs font-bold px-3 py-1 rounded-full">
+                            {story.points} نقطة
+                          </span>
+                        </div>
+                        <p className="text-slate-500 text-sm line-clamp-2 leading-relaxed">{story.content}</p>
+                        <p className="text-slate-300 text-xs mt-2">
+                          {story.createdAt ? new Date(story.createdAt).toLocaleDateString('ar-EG') : ''}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteStory(story.id)}
+                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all shrink-0"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Announcement Broadcast Tab */}
+          {activeTab === 'announce' && (
+            <div className="p-8 max-w-2xl">
+              <h2 className="text-2xl font-bold text-slate-800 mb-2 flex items-center gap-2">
+                <Megaphone className="w-6 h-6 text-rose-500" />
+                إرسال إعلان لكل البطلات
+              </h2>
+              <p className="text-slate-500 mb-6 text-sm">
+                هيوصل إشعار فوري لكل طفلة معتمدة (داخل التطبيق + Push على الموبايل لو السماح مفعّل).
+              </p>
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm">
+                <div>
+                  <label className="block text-sm font-bold text-slate-600 mb-1">العنوان</label>
+                  <input
+                    type="text"
+                    value={announceTitle}
+                    onChange={(e) => setAnnounceTitle(e.target.value.slice(0, 80))}
+                    placeholder="مثال: مفاجأة جديدة في المنصّة!"
+                    className="w-full p-3 rounded-xl border-2 border-slate-100 focus:border-rose-400 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-600 mb-1">المحتوى</label>
+                  <textarea
+                    value={announceBody}
+                    onChange={(e) => setAnnounceBody(e.target.value.slice(0, 300))}
+                    placeholder="اكتبي رسالة قصيرة وواضحة للبطلات…"
+                    rows={4}
+                    className="w-full p-3 rounded-xl border-2 border-slate-100 focus:border-rose-400 outline-none resize-y"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">{announceBody.length}/300</p>
+                </div>
+                <button
+                  disabled={announceSending || !announceTitle.trim() || !announceBody.trim()}
+                  onClick={async () => {
+                    if (!announceTitle.trim() || !announceBody.trim()) return;
+                    if (!confirm(`تأكيد الإرسال إلى كل البطلات (${allChildren.filter(c => c.status === 'approved').length} بطلة)؟`)) return;
+                    setAnnounceSending(true);
+                    try {
+                      const res = await broadcastAnnouncement(announceTitle.trim(), announceBody.trim());
+                      toast.success(`تم إرسال الإعلان إلى ${res.sent} بطلة`);
+                      setAnnounceTitle('');
+                      setAnnounceBody('');
+                    } catch (e: any) {
+                      toast.error('فشل الإرسال: ' + (e?.message || 'خطأ غير معروف'));
+                    } finally {
+                      setAnnounceSending(false);
+                    }
+                  }}
+                  className="w-full bg-gradient-to-r from-rose-500 to-fuchsia-500 text-white font-bold py-3 rounded-2xl shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                >
+                  <Send className="w-5 h-5" />
+                  {announceSending ? 'جاري الإرسال…' : 'إرسال للجميع'}
+                </button>
               </div>
             </div>
           )}

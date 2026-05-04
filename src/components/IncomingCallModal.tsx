@@ -28,7 +28,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onAc
         initial={{ opacity: 0, y: -50 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -50 }}
-        className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] bg-white rounded-2xl shadow-2xl p-4 flex items-center gap-6 border border-slate-100 min-w-[320px]"
+        className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] bg-white rounded-2xl shadow-2xl p-4 flex items-center gap-6 border border-slate-100 w-[calc(100vw-1rem)] sm:w-auto sm:min-w-[320px] max-w-md"
       >
         <div className="relative">
           <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center text-3xl shadow-inner animate-pulse">

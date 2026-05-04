@@ -7,10 +7,16 @@ import { collection, addDoc, onSnapshot, query, where, serverTimestamp } from 'f
 import { ChildProfile } from '../types';
 import { toast } from 'sonner';
 import { GoogleGenAI } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || '' });
-
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { awardBadgeIfNotEarned, BADGE_IDS } from '../lib/badgeUtils';
+
+let _journalAI: GoogleGenAI | null = null;
+function getJournalAI(): GoogleGenAI {
+  if (!_journalAI) {
+    _journalAI = new GoogleGenAI({ apiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || '' });
+  }
+  return _journalAI;
+}
 
 export default function WonderJournal() {
   const navigate = useNavigate();
@@ -43,12 +49,12 @@ export default function WonderJournal() {
   }, [navigate]);
 
   const handleSave = async () => {
-    if (!profile || !entry.trim()) return;
+    if (!profile || !entry.trim() || saving) return;
     setSaving(true);
     try {
       // Generate AI feedback
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+      const response = await getJournalAI().models.generateContent({
+        model: "gemini-2.5-flash",
         contents: `أنتِ مرشدة سحرية حكيمة. طفلة اسمها ${profile.heroName || profile.name} كتبت في مفكرتها: "${entry}". 
         ردي عليها برد سحري مشجع وملهم (بحد أقصى 3 جمل) باللغة العربية الفصحى البسيطة.`,
       });
@@ -64,6 +70,10 @@ export default function WonderJournal() {
 
       setEntry('');
       toast.success('تم حفظ مغامرتكِ في مفكرة العجائب!');
+
+      if (history.length + 1 >= 5) {
+        await awardBadgeIfNotEarned(profile.uid, BADGE_IDS.WISDOM);
+      }
     } catch (error: any) {
       const errorStr = String(error?.message || error).toLowerCase();
       if (error?.status === 429 || errorStr.includes('429') || errorStr.includes('quota') || errorStr.includes('resource_exhausted')) {

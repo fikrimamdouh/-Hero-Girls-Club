@@ -1,30 +1,53 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Play, 
-  Film, 
-  Tv, 
-  Music, 
-  BookOpen, 
-  ArrowRight, 
-  Search, 
-  X,
-  Heart,
-  Star,
-  Sparkles,
-  Clock
+import {
+  Play, Film, Tv, Music, BookOpen, ArrowRight,
+  Search, X, Heart, Star, Sparkles, Clock, GraduationCap,
 } from 'lucide-react';
 import { ChildProfile } from '../types';
 import { VIDEOS, Video } from '../data/videoData';
 
 const YOUTUBE_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/;
 
+type CatId = 'all' | Video['category'] | 'recent' | 'favorites';
+
+interface CategoryDef {
+  id: CatId;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accent: string; // bg color when active
+  text: string;   // text color when active (defaults handled below)
+}
+
+const CATEGORIES: CategoryDef[] = [
+  { id: 'all',              label: 'الكل',              icon: Tv,            accent: 'bg-stone-800',     text: 'text-white' },
+  { id: 'favorites',        label: 'المفضلة',           icon: Heart,         accent: 'bg-pink-500',      text: 'text-white' },
+  { id: 'recent',           label: 'شوهد مؤخراً',       icon: Clock,         accent: 'bg-rose-500',      text: 'text-white' },
+  { id: 'quran_full',       label: 'القرآن الكريم',     icon: BookOpen,      accent: 'bg-emerald-600',   text: 'text-white' },
+  { id: 'interpretation',   label: 'تفسير',             icon: Search,        accent: 'bg-fuchsia-500',   text: 'text-white' },
+  { id: 'sunnah',           label: 'السنة النبوية',     icon: Heart,         accent: 'bg-pink-600',      text: 'text-white' },
+  { id: 'prophets_stories', label: 'قصص الأنبياء',      icon: Star,          accent: 'bg-amber-500',     text: 'text-white' },
+  { id: 'educational',      label: 'فيديوهات تعليمية',  icon: GraduationCap, accent: 'bg-rose-500',      text: 'text-white' },
+  { id: 'nasheeds',         label: 'أناشيد',            icon: Music,         accent: 'bg-sky-500',       text: 'text-white' },
+  { id: 'stories',          label: 'قصص أطفال',         icon: BookOpen,      accent: 'bg-orange-500',    text: 'text-white' },
+];
+
+const CATEGORY_LABELS: Partial<Record<Video['category'], string>> = {
+  quran_full:       '📖 القرآن',
+  interpretation:   '🔍 تفسير',
+  sunnah:           '❤️ سنة',
+  prophets_stories: '🌟 قصص الأنبياء',
+  nasheeds:         '🎵 أناشيد',
+  stories:          '📚 حكايات',
+  educational:      '🎓 تعليمي',
+};
+
 export default function CinemaView() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [profile, setProfile] = useState<ChildProfile | null>(null);
-  const [activeCategory, setActiveCategory] = useState<'all' | Video['category'] | 'recent' | 'favorites'>('all');
+  const [activeCategory, setActiveCategory] = useState<CatId>('all');
   const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,45 +56,28 @@ export default function CinemaView() {
 
   useEffect(() => {
     const activeChildStr = localStorage.getItem('active_child');
-    if (!activeChildStr) {
-      navigate('/');
-      return;
-    }
+    if (!activeChildStr) { navigate('/'); return; }
     const child = JSON.parse(activeChildStr);
     setProfile(child);
-
-    // Load favorites and recent
     const favs = localStorage.getItem(`fav_videos_${child.uid}`);
     if (favs) setFavorites(JSON.parse(favs));
-    
     const recents = localStorage.getItem(`recent_videos_${child.uid}`);
     if (recents) setRecent(JSON.parse(recents));
-
-    // Handle category from URL
     const cat = searchParams.get('cat');
-    if (cat && ['all', 'quran_full', 'interpretation', 'sunnah', 'prophets_stories', 'nasheeds', 'stories', 'educational', 'recent', 'favorites'].includes(cat)) {
-      setActiveCategory(cat as any);
-    }
-
+    if (cat && CATEGORIES.some(c => c.id === cat)) setActiveCategory(cat as CatId);
     const sub = searchParams.get('sub');
-    if (sub) {
-      setActiveSubcategory(sub);
-    } else {
-      setActiveSubcategory(null);
-    }
+    setActiveSubcategory(sub || null);
   }, [navigate, searchParams]);
 
   const toggleFavorite = (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    const newFavs = favorites.includes(id) 
-      ? favorites.filter(fid => fid !== id)
-      : [id, ...favorites];
+    const newFavs = favorites.includes(id) ? favorites.filter(f => f !== id) : [id, ...favorites];
     setFavorites(newFavs);
     if (profile) localStorage.setItem(`fav_videos_${profile.uid}`, JSON.stringify(newFavs));
   };
 
   const addToRecent = (id: string) => {
-    const newRecent = [id, ...recent.filter(rid => rid !== id)].slice(0, 10);
+    const newRecent = [id, ...recent.filter(r => r !== id)].slice(0, 10);
     setRecent(newRecent);
     if (profile) localStorage.setItem(`recent_videos_${profile.uid}`, JSON.stringify(newRecent));
   };
@@ -79,22 +85,20 @@ export default function CinemaView() {
   const filteredVideos = VIDEOS.filter(v => {
     if (activeCategory === 'favorites') return favorites.includes(v.id);
     if (activeCategory === 'recent') return recent.includes(v.id);
-    
     const matchesCategory = activeCategory === 'all' || v.category === activeCategory;
     const matchesSubcategory = !activeSubcategory || v.subcategory === activeSubcategory;
-    const matchesSearch = v.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         v.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = v.title.toLowerCase().includes(q) || v.description?.toLowerCase().includes(q);
     return matchesCategory && matchesSubcategory && matchesSearch;
   });
 
-  // Sort recent videos by their order in the recent array
-  const displayVideos = activeCategory === 'recent' 
+  const displayVideos = activeCategory === 'recent'
     ? [...filteredVideos].sort((a, b) => recent.indexOf(a.id) - recent.indexOf(b.id))
     : filteredVideos;
 
   const fallbackThumb =
     'data:image/svg+xml;utf8,' +
-    encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#1e293b"/><stop offset="1" stop-color="#0f172a"/></linearGradient></defs><rect width="1280" height="720" fill="url(#g)"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#f8fafc" font-size="42" font-family="Arial">Hero Girls Club • Video</text></svg>`);
+    encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#fde68a"/><stop offset="1" stop-color="#fbcfe8"/></linearGradient></defs><rect width="1280" height="720" fill="url(#g)"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#9f1239" font-size="42" font-family="Arial">نادي البطلات الصغيرات • فيديو</text></svg>`);
 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
     e.currentTarget.onerror = null;
@@ -102,393 +106,256 @@ export default function CinemaView() {
   };
 
   const getVideoEmbedSrc = (video: Video) => {
-    const videoId = video.youtubeId?.trim();
-    if (!videoId || !YOUTUBE_ID_PATTERN.test(videoId)) {
-      return null;
-    }
-    return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
+    const id = video.youtubeId?.trim();
+    if (!id || !YOUTUBE_ID_PATTERN.test(id)) return null;
+    return `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&modestbranding=1`;
   };
 
-  const religiousSeriesCount = VIDEOS.filter(v =>
-    ['quran_full', 'interpretation', 'sunnah', 'prophets_stories'].includes(v.category)
-  ).length;
-  const educationalCount = VIDEOS.filter(v => v.category === 'educational').length;
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: VIDEOS.length, favorites: favorites.length, recent: recent.length };
+    VIDEOS.forEach(v => { c[v.category] = (c[v.category] || 0) + 1; });
+    return c;
+  }, [favorites, recent]);
 
-  const headerPreviewVideos = (() => {
-    if (activeCategory === 'favorites') {
-      return VIDEOS.filter(v => favorites.includes(v.id)).slice(0, 4);
-    }
-    if (activeCategory === 'recent') {
-      return [...VIDEOS]
-        .filter(v => recent.includes(v.id))
-        .sort((a, b) => recent.indexOf(a.id) - recent.indexOf(b.id))
-        .slice(0, 4);
-    }
-    if (activeCategory === 'all') {
-      return VIDEOS.slice(0, 4);
-    }
-    return VIDEOS.filter(v => v.category === activeCategory).slice(0, 4);
-  })();
-
-  const featuredVideo = (() => {
-    if (activeCategory === 'favorites') {
-      return VIDEOS.find(v => favorites.includes(v.id)) || VIDEOS[0];
-    }
-    if (activeCategory === 'recent') {
-      return [...VIDEOS].find(v => recent.includes(v.id)) || VIDEOS[0];
-    }
-    if (activeCategory === 'all') {
-      return VIDEOS.find(v => v.id === 'ps1') || VIDEOS[0];
-    }
+  const featuredVideo: Video = useMemo(() => {
+    if (activeCategory === 'favorites') return VIDEOS.find(v => favorites.includes(v.id)) || VIDEOS[0];
+    if (activeCategory === 'recent')    return [...VIDEOS].find(v => recent.includes(v.id)) || VIDEOS[0];
+    if (activeCategory === 'all')       return VIDEOS.find(v => v.id === 'ps1') || VIDEOS[0];
     return VIDEOS.find(v => v.category === activeCategory) || VIDEOS[0];
-  })();
+  }, [activeCategory, favorites, recent]);
 
-  const featuredMeta = (() => {
-    if (activeCategory === 'quran_full') {
-      return {
-        badge: 'رحلة قرآنية 📖',
-        title: 'القرآن الكريم للأطفال',
-        description: 'تلاوات مرتلة وتعليمية تساعد طفلتك على تحسين القراءة وتثبيت الحفظ.',
-        overlay: 'from-emerald-950 via-emerald-900/45 to-transparent',
-        button: 'hover:bg-emerald-500 hover:text-white'
-      };
-    }
-    if (activeCategory === 'interpretation') {
-      return {
-        badge: 'معاني جميلة 🔎',
-        title: 'تفسير مبسط للأطفال',
-        description: 'شرح معاني الآيات بلغة قريبة للطفل مع أمثلة من الحياة اليومية.',
-        overlay: 'from-purple-950 via-purple-900/45 to-transparent',
-        button: 'hover:bg-purple-500 hover:text-white'
-      };
-    }
-    if (activeCategory === 'sunnah') {
-      return {
-        badge: 'سنة نبوية ❤️',
-        title: 'تعلم السنة النبوية',
-        description: 'دروس عملية في الآداب والأذكار والعبادات بطريقة سهلة ومحببة.',
-        overlay: 'from-pink-950 via-pink-900/45 to-transparent',
-        button: 'hover:bg-pink-500 hover:text-white'
-      };
-    }
-    if (activeCategory === 'nasheeds') {
-      return {
-        badge: 'أناشيد لطيفة 🎵',
-        title: 'أناشيد تربوية ممتعة',
-        description: 'أناشيد هادفة تعزز القيم والسلوك الإيجابي بأسلوب مرح.',
-        overlay: 'from-sky-950 via-sky-900/45 to-transparent',
-        button: 'hover:bg-sky-500 hover:text-white'
-      };
-    }
-    if (activeCategory === 'stories') {
-      return {
-        badge: 'حكايات ممتعة 📚',
-        title: 'قصص أطفال تربوية',
-        description: 'قصص قصيرة تحمل معاني جميلة مثل الصدق والأمانة والتعاون.',
-        overlay: 'from-orange-950 via-orange-900/45 to-transparent',
-        button: 'hover:bg-orange-500 hover:text-white'
-      };
-    }
-    if (activeCategory === 'educational') {
-      return {
-        badge: 'تعلم واكتشاف 🎓',
-        title: 'فيديوهات تعليمية',
-        description: 'محتوى تعليمي بصري يساعد على الفهم ويحفّز حب التعلم.',
-        overlay: 'from-rose-950 via-rose-900/45 to-transparent',
-        button: 'hover:bg-rose-500 hover:text-white'
-      };
-    }
-    if (activeCategory === 'favorites') {
-      return {
-        badge: 'المفضلة لديكِ 💖',
-        title: 'فيديوهاتك المفضلة',
-        description: 'هنا كل الفيديوهات التي أعجبتك لسهولة الرجوع إليها سريعًا.',
-        overlay: 'from-pink-950 via-pink-900/45 to-transparent',
-        button: 'hover:bg-pink-500 hover:text-white'
-      };
-    }
-    if (activeCategory === 'recent') {
-      return {
-        badge: 'مشاهدة حديثة 🕒',
-        title: 'شوهد مؤخرًا',
-        description: 'تابعي من حيث توقفتِ مع آخر الفيديوهات التي تم فتحها.',
-        overlay: 'from-indigo-950 via-indigo-900/45 to-transparent',
-        button: 'hover:bg-indigo-500 hover:text-white'
-      };
-    }
-    return {
-      badge: 'عرض مميز ✨',
+  const featuredMeta = useMemo(() => {
+    const map: Record<string, { badge: string; title: string; description: string; gradient: string }> = {
+      quran_full:       { badge: '📖 رحلة قرآنية',      title: 'القرآن الكريم للأطفال',     description: 'تلاوات مرتلة وتعليمية تساعد طفلتك على تحسين القراءة وتثبيت الحفظ.', gradient: 'from-emerald-600 to-teal-600' },
+      interpretation:   { badge: '🔎 معاني جميلة',     title: 'تفسير مبسط للأطفال',         description: 'شرح معاني الآيات بلغة قريبة للطفل مع أمثلة من الحياة اليومية.',  gradient: 'from-fuchsia-600 to-pink-600' },
+      sunnah:           { badge: '❤️ سنة نبوية',        title: 'تعلم السنة النبوية',         description: 'دروس عملية في الآداب والأذكار والعبادات بطريقة سهلة ومحببة.', gradient: 'from-pink-600 to-rose-600' },
+      nasheeds:         { badge: '🎵 أناشيد لطيفة',     title: 'أناشيد تربوية ممتعة',         description: 'أناشيد هادفة تعزز القيم والسلوك الإيجابي بأسلوب مرح.',           gradient: 'from-sky-500 to-indigo-600' },
+      stories:          { badge: '📚 حكايات ممتعة',     title: 'قصص أطفال تربوية',           description: 'قصص قصيرة تحمل معاني جميلة مثل الصدق والأمانة والتعاون.',       gradient: 'from-orange-500 to-amber-600' },
+      educational:      { badge: '🎓 تعلم واكتشاف',     title: 'فيديوهات تعليمية',           description: 'محتوى تعليمي بصري يساعد على الفهم ويحفّز حب التعلم.',           gradient: 'from-rose-500 to-red-600' },
+      favorites:        { badge: '💖 المفضلة لديكِ',    title: 'فيديوهاتك المفضلة',          description: 'هنا كل الفيديوهات التي أعجبتك لسهولة الرجوع إليها سريعاً.',     gradient: 'from-pink-500 to-rose-600' },
+      recent:           { badge: '🕒 مشاهدة حديثة',     title: 'شوهد مؤخراً',                description: 'تابعي من حيث توقفتِ مع آخر الفيديوهات التي تم فتحها.',          gradient: 'from-rose-500 to-fuchsia-600' },
+    };
+    return map[activeCategory] || {
+      badge: '✨ مختارة لكِ',
       title: 'قصص الأنبياء للأطفال',
       description: 'تعرفي على قصص الأنبياء عليهم السلام بأسلوب ممتع وشيق يعلمنا القيم والأخلاق الجميلة.',
-      overlay: 'from-slate-900 via-slate-900/40 to-transparent',
-      button: 'hover:bg-pink-500 hover:text-white'
+      gradient: 'from-amber-500 to-rose-600',
     };
-  })();
+  }, [activeCategory]);
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white font-sans" dir="rtl">
-      {/* Header */}
-      <header className="p-6 flex justify-between items-center border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-30">
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => navigate('/child')}
-            className="p-2 hover:bg-slate-800 rounded-full transition-colors"
-          >
-            <ArrowRight className="w-6 h-6" />
-          </button>
-          <div>
-            <h1 className="text-2xl font-black flex items-center gap-2">
-              <Film className="w-8 h-8 text-pink-500" />
-              قاعة السينما السحرية
-            </h1>
-            <p className="text-slate-400 text-sm font-bold">شاهدي وتعلمي في عالمكِ الآمن ✨</p>
-          </div>
-        </div>
+    <div className="min-h-screen bg-[#fdfaf6] font-arabic" dir="rtl"
+      style={{ backgroundImage: 'radial-gradient(circle at 0% 0%, rgba(254,215,170,0.35), transparent 50%), radial-gradient(circle at 100% 0%, rgba(251,207,232,0.30), transparent 45%)' }}>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden lg:flex items-center gap-2">
-            <div className="flex -space-x-4 rtl:space-x-reverse">
-              {headerPreviewVideos.map((video) => (
-                <img
-                  key={`header-preview-${video.id}`}
-                  src={video.thumbnail}
-                  alt={video.title}
-                  className="w-11 h-11 rounded-full border-2 border-slate-700 object-cover shadow-lg"
-                  referrerPolicy="no-referrer"
-                  onError={handleImageError}
-                />
-              ))}
+      {/* Top bar */}
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-stone-200/60">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 h-16 flex items-center gap-3">
+          <button
+            onClick={() => navigate('/child')}
+            className="h-10 w-10 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center shrink-0"
+            aria-label="العودة"
+          ><ArrowRight className="h-4 w-4" /></button>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-rose-500 to-fuchsia-600 flex items-center justify-center shadow-md shadow-rose-200">
+              <Film className="h-5 w-5 text-white" />
             </div>
-            <span className="text-xs font-black text-slate-300 bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-full">
-              صور الأقسام المفتوحة
-            </span>
+            <div className="hidden sm:block">
+              <p className="text-[11px] leading-none text-stone-400 font-bold">قاعة السينما</p>
+              <p className="text-sm font-extrabold leading-tight text-stone-800">المكتبة الدينية والتعليمية</p>
+            </div>
           </div>
-          <div className="hidden md:flex items-center gap-3 bg-slate-800 p-2 px-4 rounded-full border border-slate-700">
-            <Search className="w-5 h-5 text-slate-500" />
-            <input 
-              type="text" 
-              placeholder="ابحثي عن فيديو..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-transparent border-none outline-none text-sm font-bold w-48"
-            />
+          <div className="flex-1 max-w-md mx-auto">
+            <div className="relative">
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 h-4 w-4" />
+              <input
+                type="text"
+                placeholder="ابحثي عن فيديو..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-stone-100/80 focus:bg-white pr-9 pl-9 py-2.5 rounded-full text-sm font-bold text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-rose-300 transition-all"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute left-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full hover:bg-stone-200 text-stone-400 flex items-center justify-center" aria-label="مسح">
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-rose-50 text-rose-700 ring-1 ring-rose-200 px-3 py-1.5">
+            <Film className="h-3.5 w-3.5" />
+            <span className="text-xs font-extrabold">{VIDEOS.length}</span>
           </div>
         </div>
       </header>
 
-      <main className="p-6 max-w-7xl mx-auto">
-        {/* Featured Banner */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 pt-6 pb-20 space-y-6">
+        {/* Featured */}
+        <motion.button
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-12 relative h-64 md:h-96 rounded-[3rem] overflow-hidden group cursor-pointer shadow-2xl"
-          onClick={() => {
-            setSelectedVideo(featuredVideo);
-            addToRecent(featuredVideo.id);
-          }}
+          onClick={() => { setSelectedVideo(featuredVideo); addToRecent(featuredVideo.id); }}
+          className="group relative w-full overflow-hidden rounded-3xl shadow-[0_4px_30px_rgba(244,63,94,0.15)] ring-1 ring-stone-100 text-right"
         >
-          <img 
-            src={featuredVideo.thumbnail}
-            alt={featuredVideo.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000"
-            referrerPolicy="no-referrer"
-            onError={handleImageError}
-          />
-          <div className={`absolute inset-0 bg-gradient-to-t ${featuredMeta.overlay} flex flex-col justify-end p-8 md:p-12`}>
-            <div className="flex items-center gap-2 mb-4">
-              <span className="bg-pink-500 text-white px-4 py-1 rounded-full text-xs font-black uppercase tracking-widest animate-pulse">
+          <div className="relative h-56 sm:h-72 md:h-96">
+            <img
+              src={featuredVideo.thumbnail}
+              alt={featuredVideo.title}
+              className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000"
+              referrerPolicy="no-referrer"
+              onError={handleImageError}
+            />
+            <div className={`absolute inset-0 bg-gradient-to-t ${featuredMeta.gradient} opacity-80 mix-blend-multiply`} />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+            <div className="relative h-full flex flex-col justify-end p-6 sm:p-8 md:p-10 text-white">
+              <span className="self-start inline-flex items-center gap-1.5 rounded-full bg-white/20 backdrop-blur-md ring-1 ring-white/30 px-3 py-1 text-[11px] font-extrabold mb-3">
                 {featuredMeta.badge}
               </span>
-            </div>
-            <h2 className="text-3xl md:text-5xl font-black mb-4 drop-shadow-lg">{featuredMeta.title}</h2>
-            <p className="text-slate-200 font-bold max-w-2xl mb-6 hidden md:block">
-              {featuredMeta.description}
-            </p>
-            <div className="flex items-center gap-4">
-              <button className={`bg-white text-slate-900 px-8 py-4 rounded-2xl font-black flex items-center gap-2 transition-all ${featuredMeta.button}`}>
-                <Play className="w-6 h-6 fill-current" />
-                شاهدي الآن
-              </button>
+              <h2 className="text-2xl sm:text-3xl md:text-5xl font-black mb-2 drop-shadow-md tracking-tight">{featuredMeta.title}</h2>
+              <p className="text-white/90 font-bold text-sm sm:text-base max-w-2xl mb-4 hidden sm:block">{featuredMeta.description}</p>
+              <div>
+                <span className="inline-flex items-center gap-2 rounded-2xl bg-white text-stone-900 px-6 py-3 font-extrabold shadow-lg group-hover:scale-105 transition-transform">
+                  <Play className="w-5 h-5 fill-current" /> شاهدي الآن
+                </span>
+              </div>
             </div>
           </div>
-        </motion.div>
+        </motion.button>
 
-        {/* Categories */}
-        <div className="mb-6 bg-gradient-to-r from-emerald-900/60 to-indigo-900/60 border border-emerald-700/40 rounded-3xl p-5">
-          <p className="text-sm font-black text-emerald-200 mb-1">🎯 مكتبة مميزة ومتوازنة</p>
-          <p className="text-xs font-bold text-slate-200">
-            السلسلة الدينية المتكاملة تضم {religiousSeriesCount} فيديو، وقسم الفيديوهات التعليمية يضم {educationalCount} فيديو.
-          </p>
+        {/* Library callout */}
+        <div className="rounded-2xl bg-white ring-1 ring-stone-100 shadow-sm px-5 py-3 flex flex-wrap items-center gap-3 text-sm">
+          <Sparkles className="h-4 w-4 text-amber-500" />
+          <span className="font-extrabold text-stone-800">مكتبة متوازنة:</span>
+          <span className="font-bold text-stone-500">
+            {(counts.quran_full || 0) + (counts.interpretation || 0) + (counts.sunnah || 0) + (counts.prophets_stories || 0)} ديني
+            · {counts.educational || 0} تعليمي
+            · {counts.nasheeds || 0} أناشيد
+            · {counts.stories || 0} حكايات
+          </span>
         </div>
 
-        <div className="flex gap-3 mb-8 overflow-x-auto pb-4 no-scrollbar">
-          <CategoryButton 
-            active={activeCategory === 'all'} 
-            onClick={() => { setActiveCategory('all'); setActiveSubcategory(null); }}
-            icon={<Tv className="w-5 h-5" />}
-            label="الكل"
-            color="bg-slate-800"
-          />
-          <CategoryButton 
-            active={activeCategory === 'favorites'} 
-            onClick={() => { setActiveCategory('favorites'); setActiveSubcategory(null); }}
-            icon={<Heart className="w-5 h-5 fill-current" />}
-            label="المفضلة"
-            color="bg-pink-600"
-          />
-          <CategoryButton 
-            active={activeCategory === 'recent'} 
-            onClick={() => { setActiveCategory('recent'); setActiveSubcategory(null); }}
-            icon={<Clock className="w-5 h-5" />}
-            label="شوهد مؤخراً"
-            color="bg-indigo-600"
-          />
-          <div className="w-px h-10 bg-slate-800 mx-2 self-center" />
-          <CategoryButton 
-            active={activeCategory === 'quran_full'} 
-            onClick={() => { setActiveCategory('quran_full'); setActiveSubcategory(null); }}
-            icon={<BookOpen className="w-5 h-5" />}
-            label="القرآن الكريم"
-            color="bg-emerald-700"
-          />
-          <CategoryButton 
-            active={activeCategory === 'interpretation'} 
-            onClick={() => { setActiveCategory('interpretation'); setActiveSubcategory(null); }}
-            icon={<Search className="w-5 h-5" />}
-            label="تفسير"
-            color="bg-purple-600"
-          />
-          <CategoryButton 
-            active={activeCategory === 'sunnah'} 
-            onClick={() => { setActiveCategory('sunnah'); setActiveSubcategory(null); }}
-            icon={<Heart className="w-5 h-5" />}
-            label="السنة النبوية"
-            color="bg-pink-600"
-          />
-          <CategoryButton 
-            active={activeCategory === 'prophets_stories'} 
-            onClick={() => { setActiveCategory('prophets_stories'); setActiveSubcategory(null); }}
-            icon={<Star className="w-5 h-5" />}
-            label="قصص الأنبياء"
-            color="bg-amber-600"
-          />
-          <CategoryButton 
-            active={activeCategory === 'educational'} 
-            onClick={() => { setActiveCategory('educational'); setActiveSubcategory(null); }}
-            icon={<Sparkles className="w-5 h-5" />}
-            label="فيديوهات تعليمية"
-            color="bg-red-600"
-          />
-          <CategoryButton 
-            active={activeCategory === 'nasheeds'} 
-            onClick={() => { setActiveCategory('nasheeds'); setActiveSubcategory(null); }}
-            icon={<Music className="w-5 h-5" />}
-            label="أناشيد"
-            color="bg-sky-600"
-          />
-          <CategoryButton 
-            active={activeCategory === 'stories'} 
-            onClick={() => { setActiveCategory('stories'); setActiveSubcategory(null); }}
-            icon={<BookOpen className="w-5 h-5" />}
-            label="قصص أطفال"
-            color="bg-orange-600"
-          />
-        </div>
-
-        {/* Video Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          <AnimatePresence mode="popLayout">
-            {displayVideos.map((video) => (
-              <motion.div
-                key={video.id}
-                layout
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                whileHover={{ y: -5 }}
-                className="bg-slate-800 rounded-3xl overflow-hidden border border-slate-700 group cursor-pointer relative"
-                onClick={() => {
-                  setSelectedVideo(video);
-                  addToRecent(video.id);
-                }}
+        {/* Category chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto -mx-1 px-1 pb-1" style={{ scrollbarWidth: 'none' }}>
+          {CATEGORIES.map(cat => {
+            const Icon = cat.icon;
+            const active = activeCategory === cat.id;
+            const count = counts[cat.id] ?? 0;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => { setActiveCategory(cat.id); setActiveSubcategory(null); }}
+                className={`shrink-0 inline-flex items-center gap-1.5 rounded-2xl px-3.5 py-2 text-sm font-extrabold ring-1 transition-all ${
+                  active ? `${cat.accent} ${cat.text} ring-transparent shadow-md shadow-stone-200`
+                         : 'bg-white text-stone-600 ring-stone-200 hover:bg-stone-50'
+                }`}
               >
-                <div className="relative aspect-video">
-                  <img 
-                    src={video.thumbnail} 
-                    alt={video.title}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                    referrerPolicy="no-referrer"
-                    onError={handleImageError}
-                  />
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center text-slate-900 shadow-xl">
-                      <Play className="w-8 h-8 fill-current" />
-                    </div>
-                  </div>
-                  <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg text-xs font-bold">
-                    {video.duration}
-                  </div>
-                  
-                  <button 
-                    onClick={(e) => toggleFavorite(video.id, e)}
-                    className={`absolute top-3 left-3 p-2 rounded-full backdrop-blur-md transition-all ${
-                      favorites.includes(video.id) ? 'bg-pink-500 text-white' : 'bg-black/40 text-white hover:bg-pink-500'
-                    }`}
-                  >
-                    <Heart className={`w-4 h-4 ${favorites.includes(video.id) ? 'fill-current' : ''}`} />
-                  </button>
-
-                  {video.subcategory && (
-                    <div className="absolute top-3 right-3 bg-pink-500/80 backdrop-blur-md px-2 py-1 rounded-lg text-[10px] font-black">
-                      {video.subcategory}
-                    </div>
-                  )}
-                </div>
-                <div className="p-4">
-                  <h3 className="text-lg font-black mb-1 group-hover:text-pink-400 transition-colors line-clamp-1">{video.title}</h3>
-                  <p className="text-slate-400 text-xs font-bold mb-3 line-clamp-2">{video.description}</p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider bg-slate-900/50 px-2 py-1 rounded-md">
-                      {video.category === 'quran_full' && '📖 القرآن'}
-                      {video.category === 'interpretation' && '🔍 تفسير'}
-                      {video.category === 'sunnah' && '❤️ سنة'}
-                      {video.category === 'prophets_stories' && '🌟 قصص'}
-                      {video.category === 'nasheeds' && '🎵 أناشيد'}
-                      {video.category === 'stories' && '📚 حكايات'}
-                      {video.category === 'educational' && '🎓 تعليمي'}
-                    </span>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
+                <Icon className="h-4 w-4" />
+                <span>{cat.label}</span>
+                <span className={`text-[10px] font-extrabold rounded-full px-1.5 ${active ? 'bg-white/25' : 'bg-stone-100 text-stone-500'}`}>{count}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {filteredVideos.length === 0 && (
-          <div className="text-center py-20">
-            <div className="text-6xl mb-4">🎬</div>
-            <h3 className="text-xl font-bold text-slate-400">لم نجد أي فيديوهات بهذا الاسم..</h3>
+        {/* Grid */}
+        <section>
+          <div className="flex items-end justify-between mb-3">
+            <h2 className="text-lg font-black text-stone-800">
+              {CATEGORIES.find(c => c.id === activeCategory)?.label || 'الفيديوهات'}
+            </h2>
+            <span className="text-xs text-stone-400 font-bold">{displayVideos.length} نتيجة</span>
           </div>
-        )}
+
+          {displayVideos.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+              <AnimatePresence mode="popLayout">
+                {displayVideos.map((video) => (
+                  <motion.div
+                    key={video.id}
+                    layout
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    whileHover={{ y: -4 }}
+                    className="bg-white rounded-2xl overflow-hidden ring-1 ring-stone-100 hover:ring-stone-200 hover:shadow-lg hover:shadow-stone-200/60 transition-all group cursor-pointer"
+                    onClick={() => { setSelectedVideo(video); addToRecent(video.id); }}
+                  >
+                    <div className="relative aspect-video bg-stone-50">
+                      <img
+                        src={video.thumbnail}
+                        alt={video.title}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                        referrerPolicy="no-referrer"
+                        onError={handleImageError}
+                      />
+                      <div className="absolute inset-0 bg-black/15 group-hover:bg-black/0 transition flex items-center justify-center">
+                        <div className="w-14 h-14 bg-rose-600 rounded-full flex items-center justify-center text-white shadow-2xl group-hover:scale-110 transition-transform">
+                          <Play className="w-6 h-6 fill-current mr-0.5" />
+                        </div>
+                      </div>
+                      <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md text-white px-2 py-0.5 rounded-md text-[11px] font-extrabold">
+                        {video.duration}
+                      </div>
+                      <button
+                        onClick={(e) => toggleFavorite(video.id, e)}
+                        className={`absolute top-2 left-2 h-8 w-8 rounded-full backdrop-blur-md flex items-center justify-center transition-all ${
+                          favorites.includes(video.id) ? 'bg-pink-500 text-white shadow-md' : 'bg-white/85 text-stone-500 hover:bg-pink-500 hover:text-white'
+                        }`}
+                        aria-label="مفضلة"
+                      >
+                        <Heart className={`w-4 h-4 ${favorites.includes(video.id) ? 'fill-current' : ''}`} />
+                      </button>
+                      {video.subcategory && (
+                        <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-md text-stone-700 px-2 py-0.5 rounded-md text-[10px] font-extrabold ring-1 ring-stone-200">
+                          {video.subcategory}
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4">
+                      <h3 className="text-sm sm:text-base font-extrabold text-stone-800 mb-1 group-hover:text-rose-600 transition-colors line-clamp-2">{video.title}</h3>
+                      {video.description && (
+                        <p className="text-stone-500 text-xs font-bold mb-3 line-clamp-2">{video.description}</p>
+                      )}
+                      <span className="inline-flex items-center text-[11px] font-extrabold text-stone-500 bg-stone-100 px-2 py-1 rounded-md">
+                        {CATEGORY_LABELS[video.category]}
+                      </span>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          ) : (
+            <div className="text-center py-20">
+              <div className="h-16 w-16 mx-auto rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center mb-4">
+                <Search className="h-7 w-7" />
+              </div>
+              <h3 className="text-lg font-black text-stone-800 mb-1">لم نجد أي فيديوهات</h3>
+              <p className="text-sm text-stone-500 font-bold mb-5">جرّبي تصنيفاً آخر أو كلمة بحث مختلفة</p>
+              <button
+                onClick={() => { setSearchQuery(''); setActiveCategory('all'); setActiveSubcategory(null); }}
+                className="rounded-2xl bg-rose-500 hover:bg-rose-600 text-white font-extrabold px-6 py-2.5 shadow-md shadow-rose-200"
+              >عرض كل الفيديوهات</button>
+            </div>
+          )}
+        </section>
       </main>
 
-      {/* Video Player Modal */}
+      {/* Player Modal */}
       <AnimatePresence>
         {selectedVideo && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl">
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+            onClick={() => setSelectedVideo(null)}
+          >
             <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="w-full max-w-5xl bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl border border-slate-800"
+              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+              className="w-full max-w-5xl bg-white rounded-3xl overflow-hidden shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-6 flex justify-between items-center border-b border-slate-800">
-                <h2 className="text-xl font-black">{selectedVideo.title}</h2>
-                <button 
-                  onClick={() => setSelectedVideo(null)}
-                  className="p-2 hover:bg-slate-800 rounded-full transition-colors"
-                >
-                  <X className="w-6 h-6" />
+              <div className="px-5 py-4 flex justify-between items-center border-b border-stone-100">
+                <h2 className="text-base sm:text-lg font-black text-stone-800 line-clamp-1">{selectedVideo.title}</h2>
+                <button onClick={() => setSelectedVideo(null)} className="p-2 hover:bg-stone-100 rounded-full text-stone-500" aria-label="إغلاق">
+                  <X className="w-5 h-5" />
                 </button>
               </div>
               <div className="aspect-video bg-black">
@@ -496,58 +363,35 @@ export default function CinemaView() {
                   const embedSrc = getVideoEmbedSrc(selectedVideo);
                   if (!embedSrc) {
                     return (
-                      <div className="w-full h-full flex items-center justify-center p-6 text-center">
+                      <div className="w-full h-full flex items-center justify-center p-6 text-center bg-stone-900 text-white">
                         <div>
                           <p className="font-black text-lg text-rose-300 mb-2">تعذر تشغيل هذا الفيديو</p>
-                          <p className="text-sm text-slate-300 font-bold">
-                            مصدر الفيديو غير صالح حالياً. اختاري فيديو آخر من القائمة.
-                          </p>
+                          <p className="text-sm text-stone-300 font-bold">مصدر الفيديو غير صالح حالياً. اختاري فيديو آخر من القائمة.</p>
                         </div>
                       </div>
                     );
                   }
                   return (
-                  <iframe
-                    width="100%"
-                    height="100%"
-                    src={embedSrc}
-                    title={selectedVideo.title}
-                    frameBorder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  ></iframe>
+                    <iframe
+                      width="100%" height="100%" src={embedSrc} title={selectedVideo.title}
+                      frameBorder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
                   );
                 })()}
               </div>
-              <div className="p-6 bg-slate-800/50">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-pink-500 rounded-full flex items-center justify-center text-2xl">✨</div>
-                  <div>
-                    <p className="font-bold text-slate-300">مشاهدة ممتعة يا بطلة!</p>
-                    <p className="text-sm text-slate-500">تذكري دائماً أن تأخذي استراحة بعد المشاهدة 💖</p>
-                  </div>
+              <div className="px-5 py-4 bg-stone-50 flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-rose-400 to-pink-500 rounded-xl flex items-center justify-center text-white text-lg shadow-md">✨</div>
+                <div>
+                  <p className="font-extrabold text-stone-800 text-sm">مشاهدة ممتعة يا بطلة!</p>
+                  <p className="text-xs text-stone-500 font-bold">تذكري دائماً أن تأخذي استراحة بعد المشاهدة 💖</p>
                 </div>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
-  );
-}
-
-function CategoryButton({ active, onClick, icon, label, color }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string, color: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black transition-all whitespace-nowrap ${
-        active 
-          ? `${color} text-white shadow-lg scale-105` 
-          : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Memory Card Game</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Memory Card Flip Game</h1>
+
+<div class="info">
+  <span>Moves: <span id="moves">0</span></span>
+  <span>Time: <span id="time">0</span>s</span>
+</div>
+
+<select id="level" onchange="changeLevel()">
+  <option value="easy">Easy (4x2)</option>
+  <option value="medium">Medium (4x3)</option>
+  <option value="hard">Hard (4x4)</option>
+</select>
+
+<div class="game-board" id="gameBoard"></div>
+
+<button onclick="restartGame()">Restart</button>
+
+<!-- Win Popup -->
+<div class="popup" id="popup">
+  <div class="popup-content">
+    <h2>🎉 You Win!</h2>
+    <p>Moves: <span id="finalMoves"></span></p>
+    <p>Time: <span id="finalTime"></span>s</p>
+    <button onclick="restartGame()">Play Again</button>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

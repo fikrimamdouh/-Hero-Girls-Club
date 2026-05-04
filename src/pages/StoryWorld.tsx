@@ -1,23 +1,158 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Book, ArrowRight, Sparkles, Star, Trophy, Heart, Shield, Palette, Wand2, Loader2 } from 'lucide-react';
+import {
+  Book,
+  ArrowRight,
+  Sparkles,
+  Star,
+  Trophy,
+  Wand2,
+  Loader2,
+  X,
+  BookOpen,
+} from 'lucide-react';
 import { db } from '../firebase';
-import { collection, onSnapshot, doc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { Story, ChildProfile } from '../types';
 import { toast } from 'sonner';
 import { generateMagicStory } from '../services/aiService';
 
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
+const LOCAL_STORIES: Story[] = [
+  {
+    id: 'local-1',
+    title: 'ليلى والنجمة الضائعة',
+    content: `في قرية صغيرة تحاط بالجبال الخضراء، عاشت فتاة اسمها ليلى. كانت ليلى تحب النجوم كثيراً وكانت تعدّها كل ليلة قبل النوم.
+
+ذات ليلة، لاحظت ليلى أن نجمة صغيرة وحيدة سقطت من السماء وأضاءت حديقة منزلهم بضوء ذهبي خافت.
+
+ركضت ليلى نحو النجمة وسألتها بلطف: "هل أنتِ بخير؟ هل تأذيتِ؟"
+
+قالت النجمة بصوت كالموسيقى: "أنا خائفة وضائعة، لا أعرف كيف أعود إلى السماء."
+
+فكّرت ليلى وقالت: "لا تخافي! سنجد طريقاً معاً." جمعت ليلى أصدقاءها — سامي الذي يحب العلوم، ورنا التي ترسم بشكل جميل، وأمير الذي يعرف الكثير عن الفلك.
+
+عمل الأصدقاء معاً طوال الليل. رسمت رنا خريطة للسماء، وقرأ أمير كتاباً قديماً عن النجوم، وبنى سامي جهازاً صغيراً يشير نحو مكان النجمة في السماء.
+
+عندما أشرق الفجر، حلّقت النجمة الصغيرة إلى السماء ثانيةً، وأضاءت أكثر من أي وقت مضى.
+
+منذ ذلك اليوم، كلما نظرت ليلى إلى السماء، رأت النجمة الصغيرة تلمع لها تحية خاصة.`,
+    choices: [],
+    points: 20,
+  },
+  {
+    id: 'local-2',
+    title: 'مريم وشجرة التفاح السحرية',
+    content: `في بستان جميل كانت تعيش شجرة تفاح عجيبة. ثمارها لا تُؤكل فحسب، بل كلّ ثمرة تحمل في داخلها رسالة حكمة.
+
+وجدت مريم، الفتاة ذات الضفائر الطويلة، أول تفاحة وفتحتها فوجدت مكتوباً: "الصبر مفتاح كل باب."
+
+لم تفهم مريم المعنى في البداية، فذهبت لتسأل جدّتها. ابتسمت الجدّة وقالت: "يوماً ما ستفهمين."
+
+بعد أسبوع، كانت مريم تتعلم العزف على الناي ولم تستطع. بكت وأرادت أن تتوقف، لكنها تذكّرت الرسالة: "الصبر مفتاح كل باب."
+
+حاولت مرة بعد مرة، يوماً بعد يوم. وبعد شهر كامل، عزفت مريم أول أغنية كاملة بنجاح، وكانت الأجمل التي سمعتها القرية.
+
+عادت مريم إلى الشجرة وقالت لها: "الآن فهمتُ." فنزلت ثمرة جديدة كانت مكتوب فيها: "التعلم رحلة لا نهاية لها."
+
+ابتسمت مريم وأخذت الثمرة، مدركةً أن الحياة مليئة بالدروس لمن يصبر ويتعلم.`,
+    choices: [],
+    points: 20,
+  },
+  {
+    id: 'local-3',
+    title: 'الأميرة التي أنقذت المملكة بالكتب',
+    content: `في مملكة بعيدة اسمها "ضياء"، كانت الأميرة دانا تقضي معظم وقتها في المكتبة الكبيرة بدلاً من قاعات الاحتفالات.
+
+كان الجميع يقول: "أميرة لا تحب الرقص والزينة؟ هذا غريب!" لكن دانا كانت تؤمن أن المعرفة أقوى من أي سيف.
+
+وذات يوم، أصاب المملكة مرض غريب جعل النباتات تذبل والماء يجف. لم يعرف أحد ما يفعل، وخاف الجميع.
+
+لكن دانا، التي قرأت مئات الكتب، تذكّرت كتاباً قديماً عن "ينبوع الجذور" المخفي تحت الجبل الشرقي.
+
+قادت دانا مجموعة صغيرة من الشجعان، وبفضل ما قرأته وجدوا الينبوع وأعادوا الماء إلى المملكة.
+
+منذ ذلك اليوم، بنى الملك أكبر مكتبة في المملكة وجعل تعلّم القراءة واجباً للجميع.
+
+قالت دانا في خطابها: "الكتاب لا يحمله إنسان واحد، بل يحمل أجيالاً من الحكمة."`,
+    choices: [],
+    points: 25,
+  },
+  {
+    id: 'local-4',
+    title: 'سارة والأخطبوط الوحيد',
+    content: `كانت سارة تعيش في بيت صغير قريب من البحر. في كل صباح كانت تذهب لتنظر إلى الأمواج وتتخيل ما تحتها من عجائب.
+
+في يوم شتائي ممطر، وجدت سارة على الشاطئ أخطبوطاً صغيراً محاصراً بين الصخور، لا يستطيع العودة إلى البحر.
+
+كان كثيرون يخافون من الأخطبوط، لكن سارة لم تخف. اقتربت ببطء وقالت له: "لا تخف، سأساعدك."
+
+بحثت سارة عن طريقة لجرّ الأخطبوط بلطف نحو الماء دون أن تؤذيه. أحضرت دلواً وملأته بماء البحر، ووضعت الأخطبوط فيه بحرص، ثم حملته إلى موجة عميقة وأطلقته.
+
+غاص الأخطبوط في الأعماق، ثم عاد وأطلّ برأسه للحظة كأنه يقول شكراً.
+
+قالت سارة لأمّها في المساء: "الشجاعة ليست عدم الخوف، بل هي أن تساعد رغم الخوف."
+
+ابتسمت أمّها وقبّلت جبينها: "هذا أعظم درس تعلمتِه يا حبيبتي."`,
+    choices: [],
+    points: 20,
+  },
+  {
+    id: 'local-5',
+    title: 'نور والألوان المفقودة',
+    content: `في مدينة اسمها "رويّة" كانت كل الألوان موجودة إلا اللون البنفسجي. لا أحد يعرف لماذا اختفى منذ سنوات.
+
+كانت نور، الفتاة المحبة للرسم، تحلم دائماً برسم غروب الشمس باللون البنفسجي لكنها لم تستطع.
+
+قررت نور أن تحل اللغز. سألت الجميع: العجوز بائعة الأعشاب، والنجار الكبير، والمعلمة ذات الشعر الأبيض.
+
+أخيراً أخبرتها المعلمة: "اللون البنفسجي لا يُجد في الطبيعة هنا — لكنه يولد حين تخلطين الأحمر والأزرق بمحبة."
+
+جرّبت نور في محترفها الصغير. خلطت وخلطت حتى ظهر البنفسجي الجميل أمام عينيها!
+
+ركضت نور إلى الميدان ورسمت على الجدار الكبير غروباً بنفسجياً رائعاً، وتجمّع الجميع يصفقون.
+
+علّمت نور كل أطفال المدينة كيف يصنعون البنفسجي بأنفسهم، لأن أجمل الأشياء تُبنى حين نتشارك المعرفة.`,
+    choices: [],
+    points: 25,
+  },
+  {
+    id: 'local-6',
+    title: 'البطلة الصغيرة ورسالة الشجرة العجوز',
+    content: `في غابة كثيفة كانت تقف شجرة ضخمة عمرها مئات السنين. كان الناس يقولون إنها تتكلم — لكن فقط من يصبر ويصغي يسمعها.
+
+وجدت هدى، في عطلة الصيف، طريقاً غير مطروق أوصلها إلى تلك الشجرة. جلست تحتها وأنصتت.
+
+في البداية لم تسمع إلا هواء وأوراقاً. لكنها صبرت. وببطء، شعرت كأن الشجرة تقول:
+
+"أنتِ قوية يا صغيرتي. كل يوم تعيشينه تضافين حلقة إلى سلسلتك. لا تتسرعي، الجذور تحتاج وقتاً قبل أن يطول الغصن."
+
+لم تفهم هدى كل الكلمات، لكنها حفظتها في قلبها.
+
+حين عادت إلى بيتها، كانت تواجه صعوبة في الرياضيات. تذكّرت الشجرة وقررت ألا تستسلم. راجعت ودرست يوماً بعد يوم.
+
+وحين نجحت في اختبارها بتفوق، عادت إلى الغابة وجلست تحت الشجرة وقالت: "شكراً. فهمتُ الآن."
+
+وكأن الريح أجابتها: "أنا كنت أعرف أنكِ ستفهمين."`,
+    choices: [],
+    points: 30,
+  },
+];
+
+const STORY_EMOJIS = ['📚', '🌟', '🌸', '🦋', '🌙', '🌈', '💫', '🌺', '🎀', '✨'];
+
 export default function StoryWorld() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<ChildProfile | null>(null);
-  const [stories, setStories] = useState<Story[]>([]);
+  const [firestoreStories, setFirestoreStories] = useState<Story[]>([]);
   const [activeStory, setActiveStory] = useState<Story | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [aiStory, setAiStory] = useState<{ title: string, content: string } | null>(null);
+  const [aiStory, setAiStory] = useState<{ title: string; content: string } | null>(null);
+
+  const stories = firestoreStories.length > 0 ? firestoreStories : LOCAL_STORIES;
 
   useEffect(() => {
     const activeChildStr = localStorage.getItem('active_child');
@@ -27,11 +162,18 @@ export default function StoryWorld() {
       navigate('/');
     }
 
-    const unsubscribe = onSnapshot(collection(db, 'stories'), (snapshot) => {
-      const storiesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      setStories(storiesData);
-      setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'stories'));
+    const unsubscribe = onSnapshot(
+      collection(db, 'stories'),
+      (snapshot) => {
+        const storiesData = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+        setFirestoreStories(storiesData);
+        setLoading(false);
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.GET, 'stories');
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, [navigate]);
@@ -40,13 +182,22 @@ export default function StoryWorld() {
     if (!profile) return;
     setGenerating(true);
     try {
-      const themes = ['مغامرة في الغابة السحرية', 'إنقاذ مدينة الألوان', 'البحث عن الكنز المفقود', 'صداقة مع تنين لطيف'];
+      const themes = [
+        'مغامرة في الغابة السحرية',
+        'إنقاذ مدينة الألوان',
+        'البحث عن الكنز المفقود',
+        'صداقة مع تنين لطيف',
+      ];
       const randomTheme = themes[Math.floor(Math.random() * themes.length)];
-      const storyText = await generateMagicStory(profile.heroName || profile.name, profile.heroPower || 'الذكاء', randomTheme);
-      
+      const storyText = await generateMagicStory(
+        profile.heroName || profile.name,
+        profile.heroPower || 'الذكاء',
+        randomTheme
+      );
+
       setAiStory({
         title: `مغامرة ${profile.heroName || profile.name}: ${randomTheme}`,
-        content: storyText
+        content: storyText,
       });
     } catch (error) {
       toast.error('حدث خطأ في السحر، حاولي مرة أخرى!');
@@ -61,18 +212,17 @@ export default function StoryWorld() {
 
   const handleCompleteStory = async () => {
     if (!profile || (!activeStory && !aiStory)) return;
-    
+
     try {
       const pointsToAdd = activeStory?.points || 50;
       const newPoints = (profile.points || 0) + pointsToAdd;
       const newLevel = Math.floor(newPoints / 100) + 1;
-      
+
       await updateDoc(doc(db, 'children_profiles', profile.uid), {
         points: newPoints,
-        level: newLevel
+        level: newLevel,
       });
-      
-      // Update local storage
+
       const updatedProfile = { ...profile, points: newPoints, level: newLevel };
       localStorage.setItem('active_child', JSON.stringify(updatedProfile));
       setProfile(updatedProfile);
@@ -85,159 +235,229 @@ export default function StoryWorld() {
     }
   };
 
+  const featured = useMemo(() => stories.slice(0, 1), [stories]);
+  const rest = useMemo(() => stories.slice(1), [stories]);
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-purple-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-purple-500"></div>
+      <div className="min-h-screen bg-[#fdfaf6] flex items-center justify-center">
+        <Loader2 className="w-12 h-12 text-rose-400 animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#fff5f7] p-4 md:p-8 relative overflow-hidden">
-      {/* Magical Background Elements */}
-      <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
-        <motion.div 
-          animate={{ y: [0, -30, 0], opacity: [0.2, 0.4, 0.2] }}
-          transition={{ duration: 8, repeat: Infinity }}
-          className="absolute top-20 left-20 w-96 h-96 bg-pink-200/20 rounded-full blur-3xl"
-        />
-        <motion.div 
-          animate={{ y: [0, 30, 0], opacity: [0.2, 0.4, 0.2] }}
-          transition={{ duration: 10, repeat: Infinity }}
-          className="absolute bottom-20 right-20 w-[30rem] h-[30rem] bg-purple-200/20 rounded-full blur-3xl"
-        />
-      </div>
+    <div
+      className="min-h-screen bg-[#fdfaf6] font-arabic"
+      dir="rtl"
+      style={{
+        backgroundImage:
+          'radial-gradient(circle at 0% 0%, rgba(254,215,170,0.4), transparent 50%), radial-gradient(circle at 100% 0%, rgba(251,207,232,0.35), transparent 45%)',
+      }}
+    >
+      {/* Top bar */}
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-stone-200/60">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 h-16 flex items-center gap-3">
+          <button
+            onClick={() => navigate('/child')}
+            className="h-10 w-10 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center transition-colors shrink-0"
+            aria-label="العودة"
+          >
+            <ArrowRight className="h-4 w-4" />
+          </button>
 
-      <header className="max-w-6xl mx-auto flex items-center justify-between mb-8 relative z-10">
-        <button 
-          onClick={() => navigate('/child')}
-          className="bg-white/80 backdrop-blur-md p-3 rounded-2xl shadow-md text-princess-pink hover:bg-white transition-all border-2 border-pink-100"
-        >
-          <ArrowRight className="w-6 h-6" />
-        </button>
-        <div className="princess-card px-8 py-4">
-          <h1 className="text-2xl md:text-3xl font-bold text-princess-purple flex items-center gap-2">
-            <Book className="w-8 h-8 text-princess-pink" />
-            عالم القصص السحرية
-          </h1>
-        </div>
-        <div className="bg-white/80 backdrop-blur-md px-4 py-2 rounded-2xl shadow-md flex items-center gap-2 border-2 border-pink-100">
-          <Star className="w-5 h-5 text-princess-gold fill-current" />
-          <span className="font-bold text-princess-purple">{profile?.points}</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-rose-400 to-pink-500 flex items-center justify-center shadow-md shadow-rose-200">
+              <Book className="h-5 w-5 text-white" />
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-[11px] leading-none text-stone-400 font-bold">عالم القصص</p>
+              <p className="text-sm font-extrabold leading-tight text-stone-800">مكتبة الحكايات</p>
+            </div>
+          </div>
+
+          <div className="flex-1" />
+
+          <div className="flex items-center gap-2 bg-amber-50 ring-1 ring-amber-200 px-3 py-1.5 rounded-full">
+            <Star className="h-4 w-4 text-amber-500 fill-current" />
+            <span className="font-extrabold text-amber-700 text-sm">{profile?.points || 0}</span>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto relative z-10">
-        <AnimatePresence mode="wait">
-          {!activeStory && !aiStory ? (
-            <motion.div
-              key="story-list"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-8"
-            >
-              {/* AI Story Generator Card */}
-              <motion.div 
-                whileHover={{ scale: 1.02 }}
-                className="bg-gradient-to-r from-princess-purple to-princess-pink rounded-[3rem] p-8 text-white shadow-2xl relative overflow-hidden group border-4 border-white/20"
-              >
-                <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
-                  <div className="text-right">
-                    <h2 className="text-3xl font-bold mb-2 flex items-center gap-2 justify-end">
-                      اصنعي قصتكِ الخاصة بالذكاء الاصطناعي
-                      <Wand2 className="w-8 h-8 text-princess-gold" />
-                    </h2>
-                    <p className="text-pink-50 text-lg">سأقوم بكتابة مغامرة سحرية تكونين أنتِ بطلتها!</p>
-                  </div>
-                  <button
-                    onClick={handleCreateAiStory}
-                    disabled={generating}
-                    className="bg-white text-princess-purple font-bold py-4 px-10 rounded-2xl shadow-lg hover:bg-pink-50 transition-all flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {generating ? <Loader2 className="w-6 h-6 animate-spin" /> : <Sparkles className="w-6 h-6 text-princess-gold" />}
-                    {generating ? 'جاري تحضير السحر...' : 'ابدئي المغامرة الآن'}
-                  </button>
-                </div>
-                <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-                  <Sparkles className="w-full h-full" />
-                </div>
-              </motion.div>
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 py-8">
+        {/* AI Story Generator banner */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-fuchsia-500 via-pink-500 to-rose-400 p-6 sm:p-8 mb-8 shadow-lg shadow-pink-200"
+        >
+          <div className="absolute -top-10 -left-10 w-40 h-40 bg-white/10 rounded-full blur-2xl" />
+          <div className="absolute -bottom-12 -right-8 w-48 h-48 bg-white/10 rounded-full blur-2xl" />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {stories.length === 0 ? (
-                  <div className="col-span-full text-center py-20 bg-white/50 backdrop-blur-md rounded-[3rem] border-4 border-dashed border-pink-200">
-                    <Sparkles className="w-16 h-16 text-pink-300 mx-auto mb-4" />
-                    <p className="text-pink-400 text-xl">لا يوجد قصص حالياً. انتظروا المزيد قريباً!</p>
-                  </div>
-                ) : (
-                  stories.map(story => (
-                    <motion.div
-                      key={story.id}
-                      whileHover={{ scale: 1.05 }}
-                      className="princess-card overflow-hidden group cursor-pointer"
-                      onClick={() => handleReadStory(story)}
-                    >
-                      <div className="h-48 bg-pink-50 flex items-center justify-center text-6xl group-hover:scale-110 transition-transform">
-                        📚
-                      </div>
-                      <div className="p-6 text-right">
-                        <h3 className="text-xl font-bold text-princess-purple mb-2">{story.title}</h3>
-                        <p className="text-pink-400 text-sm mb-4 line-clamp-2 leading-relaxed">{story.content}</p>
-                        <div className="flex items-center justify-between">
-                          <span className="bg-pink-100 text-princess-pink px-3 py-1 rounded-full text-xs font-bold">
-                            {story.points} نقطة ✨
-                          </span>
-                          <button className="text-princess-purple font-bold flex items-center gap-1 hover:gap-2 transition-all">
-                            اقرئي الآن
-                            <ArrowRight className="w-4 h-4 rotate-180" />
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))
-                )}
+          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="text-right text-white">
+              <div className="inline-flex items-center gap-1.5 bg-white/20 backdrop-blur px-3 py-1 rounded-full text-xs font-bold mb-3">
+                <Sparkles className="h-3.5 w-3.5" />
+                ميزة سحرية جديدة
               </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="story-content"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="bg-white rounded-[3rem] shadow-2xl overflow-hidden border-8 border-pink-100 max-w-4xl mx-auto relative z-10"
+              <h2 className="text-2xl sm:text-3xl font-extrabold mb-2 flex items-center gap-2 justify-end">
+                اصنعي قصتكِ الخاصة بالذكاء الاصطناعي
+                <Wand2 className="h-7 w-7 text-amber-200" />
+              </h2>
+              <p className="text-pink-50 text-sm sm:text-base">سأكتب لكِ مغامرة فريدة تكونين أنتِ بطلتها!</p>
+            </div>
+            <button
+              onClick={handleCreateAiStory}
+              disabled={generating}
+              className="bg-white text-pink-600 font-extrabold py-3.5 px-8 rounded-2xl shadow-xl hover:scale-105 transition-transform flex items-center gap-2 disabled:opacity-60 disabled:hover:scale-100 shrink-0"
             >
-              <div className="bg-gradient-to-r from-princess-purple to-princess-pink p-8 text-white text-center relative">
-                <button 
-                  onClick={() => { setActiveStory(null); setAiStory(null); }}
-                  className="absolute top-6 left-6 p-2 bg-white/20 hover:bg-white/30 rounded-full transition-all"
+              {generating ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5 text-amber-500" />}
+              {generating ? 'جاري التحضير...' : 'ابدئي المغامرة'}
+            </button>
+          </div>
+        </motion.div>
+
+        {/* Section heading */}
+        <div className="flex items-end justify-between mb-5">
+          <div>
+            <h3 className="text-xl sm:text-2xl font-extrabold text-stone-800 flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-rose-500" />
+              قصص مختارة
+            </h3>
+            <p className="text-stone-500 text-sm font-bold">حكايات مليئة بالحكمة والمغامرة</p>
+          </div>
+          <span className="text-xs font-extrabold text-stone-400">{stories.length} قصة</span>
+        </div>
+
+        {stories.length === 0 ? (
+          <div className="text-center py-20 bg-white rounded-3xl ring-1 ring-stone-200">
+            <Sparkles className="w-16 h-16 text-rose-300 mx-auto mb-4" />
+            <p className="text-stone-500 text-lg font-bold">لا يوجد قصص حالياً. انتظروا المزيد قريباً!</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 auto-rows-fr">
+            {featured.map((story, idx) => (
+              <StoryCard
+                key={story.id}
+                story={story}
+                onClick={() => handleReadStory(story)}
+                emoji={STORY_EMOJIS[idx % STORY_EMOJIS.length]}
+                featured
+              />
+            ))}
+            {rest.map((story, idx) => (
+              <StoryCard
+                key={story.id}
+                story={story}
+                onClick={() => handleReadStory(story)}
+                emoji={STORY_EMOJIS[(idx + 1) % STORY_EMOJIS.length]}
+              />
+            ))}
+          </div>
+        )}
+      </main>
+
+      {/* Reader modal */}
+      <AnimatePresence>
+        {(activeStory || aiStory) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => {
+              setActiveStory(null);
+              setAiStory(null);
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden"
+            >
+              <div className="bg-gradient-to-r from-rose-400 to-pink-500 px-6 py-5 flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    setActiveStory(null);
+                    setAiStory(null);
+                  }}
+                  className="h-9 w-9 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors"
+                  aria-label="إغلاق"
                 >
-                  <ArrowRight className="w-6 h-6" />
+                  <X className="h-4 w-4" />
                 </button>
-                <h2 className="text-3xl font-bold mb-2">{activeStory?.title || aiStory?.title}</h2>
-                <div className="flex justify-center gap-4 mt-4">
-                  <Heart className="w-6 h-6 text-pink-200" />
-                  <Shield className="w-6 h-6 text-pink-200" />
-                  <Palette className="w-6 h-6 text-pink-200" />
+                <h2 className="text-xl sm:text-2xl font-extrabold text-white text-right">
+                  {activeStory?.title || aiStory?.title}
+                </h2>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 sm:p-10 text-right">
+                <div className="text-stone-700 text-lg leading-loose whitespace-pre-wrap font-arabic">
+                  {activeStory?.content || aiStory?.content}
                 </div>
               </div>
-              <div className="p-12 text-right leading-loose text-xl text-princess-purple font-arabic whitespace-pre-wrap">
-                {activeStory?.content || aiStory?.content}
-              </div>
-              <div className="p-8 bg-pink-50 flex justify-center">
+              <div className="border-t border-stone-100 p-5 bg-stone-50 flex justify-center">
                 <button
                   onClick={handleCompleteStory}
-                  className="princess-button py-4 px-12 text-xl flex items-center gap-2"
+                  className="bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-extrabold py-3 px-10 rounded-2xl shadow-lg shadow-pink-200 transition-all flex items-center gap-2"
                 >
-                  <Trophy className="w-6 h-6 text-princess-gold" />
-                  لقد قرأت القصة!
+                  <Trophy className="h-5 w-5 text-amber-200" />
+                  لقد قرأتُ القصة!
                 </button>
               </div>
             </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+function StoryCard({
+  story,
+  onClick,
+  emoji,
+  featured = false,
+}: {
+  story: Story;
+  onClick: () => void;
+  emoji: string;
+  featured?: boolean;
+}) {
+  return (
+    <motion.button
+      whileHover={{ y: -4 }}
+      onClick={onClick}
+      className={`group text-right bg-white rounded-2xl ring-1 ring-stone-200 hover:ring-rose-200 hover:shadow-lg shadow-stone-100 transition-all overflow-hidden flex flex-col ${
+        featured ? 'sm:col-span-2 sm:row-span-1' : ''
+      }`}
+    >
+      <div className="h-1.5 w-full bg-rose-500" />
+      <div
+        className={`flex items-center justify-center text-6xl bg-gradient-to-br from-rose-50 to-pink-50 ${
+          featured ? 'h-48' : 'h-36'
+        }`}
+      >
+        <span className="group-hover:scale-110 transition-transform">{emoji}</span>
+      </div>
+      <div className="p-5 flex-1 flex flex-col">
+        <h3 className={`font-extrabold text-stone-800 mb-2 ${featured ? 'text-xl' : 'text-base'}`}>
+          {story.title}
+        </h3>
+        <p className="text-stone-500 text-sm leading-relaxed line-clamp-2 mb-4">{story.content}</p>
+        <div className="mt-auto flex items-center justify-between">
+          <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-xs font-extrabold px-2.5 py-1 rounded-full">
+            <Star className="h-3 w-3 fill-current" />
+            {story.points} نقطة
+          </span>
+          <span className="text-rose-500 font-extrabold text-sm flex items-center gap-1 group-hover:gap-2 transition-all">
+            اقرئي الآن
+            <ArrowRight className="h-3.5 w-3.5 rotate-180" />
+          </span>
+        </div>
+      </div>
+    </motion.button>
   );
 }

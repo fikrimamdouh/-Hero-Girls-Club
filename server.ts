@@ -6,6 +6,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
+import { sendEmail } from "./src/utils/replitmail";
+import { startFcmWatcher } from "./server/fcmWatcher";
 
 dotenv.config();
 
@@ -87,6 +89,15 @@ async function startServer() {
     'سؤال: إيه الشيء اللي لما ترميه بيرجعلك؟ 🤔\nالجواب: الواجب! ومعاه تصحيح المعلمة كمان! 😂',
     'طالبة قالت: يا مس أنا ذكية جداً!\nالمعلمة: قولي عاصمة مصر؟\nالطالبة: القاهرة!\nالمعلمة: ممتاز!\nالطالبة: شفتي؟ عرفتها من غير ما أذاكر! 🤣',
     'سؤال: إيه الفرق بين الكتاب والمعلم؟ 🤔\nالجواب: الكتاب ما بيصرخش عليك! 😂',
+    'سؤال: ليه الجرو قعد قدام الكمبيوتر؟ 🐶\nالجواب: لأنه سمع إن فيه فأرة جوّاه! 😂🤣',
+    'طالب سأل المعلم: ليه السمكة بتسبح في المية؟ 🐟\nالمعلم: لأن الحمام بعيد عليها! 🤣😂',
+    'ولد قال لأبوه: بابا مش هروح المدرسة النهارده!\nالأب: ليه؟\nالولد: عشان المعلم قال في الفصل شيطان!\nالأب: ومالك؟\nالولد: ماقالش مين! 😂🤣',
+    'معلمة: مين يقدر يقولي على حيوان بيبدأ بحرف الألف؟\nطالب: أسد!\nالمعلمة: تاني؟\nالطالب: أسدين! 🤣😂',
+    'سؤال: إيه الفرق بين الفيل والكتاب المدرسي؟ 🐘📚\nالجواب: الكتاب أتقل! 😂🤣',
+    'سؤال: ليه البومة صاحية طول الليل؟ 🦉\nالجواب: عشان بتذاكر للامتحان! 😂🤣',
+    'طالبة قالت للمعلمة: يا مس أنا مش فاهمة حاجة!\nالمعلمة: ليه؟\nالطالبة: لأني فاهمة كل حاجة غلط! 😂🤣',
+    'سؤال: إيه الشيء اللي بيكبر كل ما أكلته؟ 🤔\nالجواب: النار! بس متاكلهاش في البيت! 😂🤣',
+    'معلم: قولي مثال على شيء طويل!\nطالب: الواجب!\nالمعلم: مثال على شيء أطول!\nالطالب: أسبوع الامتحانات! 😂🤣',
   ];
 
   const REENA_WISDOM = [
@@ -106,6 +117,9 @@ async function startServer() {
     'سوبرمان الصغير كان بيتدرب كل يوم عشان يتحكم في قواه! 🌽🦸',
     'الكابتن أمريكا كان ضعيف جداً — بس شجاعته جعلت منه الأبطال يختاروه! 💛',
     'وندر وومان تعلمت أكتر من 100 لغة — اللغة سلاح بطولي! 🌍⚡',
+    'عنترة بن شداد كان عبداً فأصبح أعظم فارس في التاريخ — الشجاعة تصنع الأبطال! ⚔️🦸‍♂️',
+    'صلاح الدين الأيوبي حرر القدس بالحكمة قبل السيف — البطل الذكي ينتصر! 🏰⚡',
+    'سيف ذو يزن سافر آلاف الأميال ليحرر وطنه — البطل لا يستسلم أبداً! 🗡️💪',
     'أنتِ تتعلمين الدروس = تتدربين زي الأبطال! كل واجب هو تدريب قوة! 🦸‍♀️',
   ];
 
@@ -193,7 +207,7 @@ async function startServer() {
           const answer = Number.isInteger(result) ? String(result) : result.toFixed(2);
           return {
             text: isMalik
-              ? `${greet}\n${a} ${op} ${b} = **${answer}** 🔢⚡\nسبايدرمان بيحسب أسرع! 😄 جربي مسألة أصعب!`
+              ? `${greet}\n${a} ${op} ${b} = **${answer}** 🔢⚡\nعنترة وسبايدرمان كلاهما كانوا يتدربون! 😄 جربي مسألة أصعب!`
               : isReena
               ? `${greet}\n${a} ${op} ${b} = **${answer}** 💎\nالحساب الصحيح. هل تريدين مسألة أصعب؟ 📖`
               : `${greet}\n${a} ${op} ${b} = **${answer}** 😄🎉\nوصلنا! رياضيات سهلة زي الفطار! 🤣 هاتي تانية!`,
@@ -222,7 +236,7 @@ async function startServer() {
       if (isCorrect) {
         return {
           text: isMalik
-            ? `${greet}\n**صح تماماً!! 🎉⚡**\nيا ${name} أنتِ أذكى من سبايدرمان! 🦸‍♀️💥\nالجواب كان **${riddleContext}** — أصبتِ!\nلغز جديد؟ قولي: لغز! 🏆`
+            ? `${greet}\n**صح تماماً!! 🎉⚡**\nيا ${name} أنتِ أذكى من سبايدرمان وعنترة معاً! 🦸‍♀️💥\nالجواب كان **${riddleContext}** — أصبتِ!\nلغز جديد؟ قولي: لغز! 🏆`
             : isReena
             ? `**أجبتِ بشكل صحيح. 💎**\nالجواب: **${riddleContext}**.\nالعقل المتأمل يصل دائماً. 🌙\nهل تريدين لغزاً آخر؟`
             : `**واوووو صح!!!! 🎉🤣**\nأنتِ خرّيجة جامعة الألغاز! 😂🏆\nالجواب **${riddleContext}** — معاكِ بالظبط!\nهاتي لغز تاني! 😄`,
@@ -243,7 +257,7 @@ async function startServer() {
     if (IMAGE_TRIGGERS.test(ml)) {
       return {
         text: isMalik
-          ? `${greet}\nحاضر! مالك لا يرفض أي مهمة! 💥🦸‍♂️\nبس أنا أحسن من سبايدرمان بالرسم! 😂\nستظهر الصورة في ثواني! ⚡`
+          ? `${greet}\nحاضر! مالك لا يرفض أي مهمة! 💥🦸‍♂️\nأنا أحسن من سبايدرمان وسيف ذو يزن بالرسم! 😂\nستظهر الصورة في ثواني! ⚡`
           : isReena
           ? `${greet}\nلحظة من فضلكِ.\nالصورة الجيدة تستحق الانتظار. 🌙\nسأعرضها عليكِ الآن. تأملي فيها بهدوء. 💎`
           : `${greet}\nرسمة؟! أنا بحب الرسم! 😄🎨\nهاجيبلك صورة حلوة جداً! ✨`,
@@ -280,7 +294,7 @@ async function startServer() {
       return {
         text: isMalik
           ? pick([
-              `${greet}\nالبطل وصل! 🦸‍♂️💥\nسبايدرمان بعت يسلم عليكِ! 😄\nإيه التحدي اللي تريدين تكسريه؟ ⚡`,
+              `${greet}\nالبطل وصل! 🦸‍♂️💥\nسبايدرمان وعنترة بعتوا يسلموا عليكِ! 😄⚔️\nإيه التحدي اللي تريدين تكسريه؟ ⚡`,
               `${greet}\nتقدري تطلبي: درس، لغز، رسم، حساب، نكتة! 💪\nأنا مالك جاهز! 🦸‍♂️`,
               `${greet}\n${pick(MALIK_HERO_FACTS)}\nإيه اللي عايزاه النهارده؟ ⚡`,
               `${greet}\nإشارة النجدة وصلتني! 🦸‍♂️⚡\nبماذا تأمرين اليوم يا ${name}؟ 💪`,
@@ -316,7 +330,7 @@ async function startServer() {
     if (/إنجليزي|انجليزي|english|ترجم|كلمة إنجليزية|أبجدية|حروف إنجليزية/i.test(ml)) {
       return {
         text: isMalik
-          ? `${greet}\nإنجليزي؟ لغة الأبطال الدولية! 🦸‍♂️🌍\nسبايدرمان بيتكلم إنجليزي وأنا أعلمكِ!\n\n🔤 A = أ، B = ب، C = ك\n💬 I am a hero = أنا بطلة!\n\nقوليلي الكلمة أو الجملة! ⚡`
+          ? `${greet}\nإنجليزي؟ لغة الأبطال الدولية! 🦸‍♂️🌍\nسبايدرمان بيتكلم إنجليزي — وعنترة كان شاعراً! أنا أعلمكِ الاثنين!\n\n🔤 A = أ، B = ب، C = ك\n💬 I am a hero = أنا بطلة!\n\nقوليلي الكلمة أو الجملة! ⚡`
           : isReena
           ? `${greet}\nاللغة الإنجليزية مدخل للعالم. 🌙\n\n📖 كلمات مفيدة:\n• Book = كتاب\n• Knowledge = معرفة\n• Wisdom = حكمة\n\nأخبريني بالكلمة التي تريدين تعلمها. 💎`
           : `${greet}\nإنجليزي؟ اللغة اللي بتخليكِ تتكلمي مع العالم! 😄🌍\nFun fact: كلمة Homework = العدو رقم واحد! 😂\n\nقوليلي إيه الكلمة وأترجمها! 🎉`,
@@ -327,7 +341,7 @@ async function startServer() {
     if (/رياضة|كرة قدم|كرة السلة|سباحة|جري|تنس|كرة يد|فريق|ملعب/i.test(ml)) {
       return {
         text: isMalik
-          ? `${greet}\nرياضة؟ تدريب الأبطال! 🦸‍♂️⚽\nسبايدرمان = تسلق + جري!\nباتمان = كاراتيه + سباحة!\n\nأنتِ بتتدربين زيهم! إيه الرياضة اللي بتمارسيها؟ 💪⚡`
+          ? `${greet}\nرياضة؟ تدريب الأبطال! 🦸‍♂️⚽\nسبايدرمان = تسلق + جري!\nباتمان = كاراتيه + سباحة!\nعنترة = فروسية + رماح! ⚔️\n\nأنتِ بتتدربين زيهم! إيه الرياضة اللي بتمارسيها؟ 💪⚡`
           : isReena
           ? `${greet}\n"الجسم السليم في العقل السليم." 🌙\nالرياضة انضباط، والانضباط حكمة. 💎\n\nأي رياضة تمارسين؟ سنتحدث عن فوائدها. 📖`
           : `${greet}\nرياضة؟ أنا بحب أتفرج عليها أكتر من ما بلعب! 😂\nبس بجد الرياضة بتخليكِ أقوى وأصح!\n\nإيه الرياضة المفضلة عندكِ؟ 🎉`,
@@ -338,7 +352,7 @@ async function startServer() {
     if (/مش قادر|مش قادرة|تعبت|صعب جداً|فشل|فشلت|مش فاهم|مش فاهمة|يأس|خايف|صعب عليّ|مش هينفع/i.test(ml)) {
       return {
         text: isMalik
-          ? `${greet}\nوقفي! البطل ما يستسلمش أبداً! 🦸‍♂️💛\n\nتذكري:\n⭐ سبايدرمان فشل ألف مرة قبل ما ينجح!\n⭐ أنتِ أقوى مما تتخيلين!\n⭐ أنا مالك معكِ حتى آخر لحظة! 💪\n\nقوليلي إيه الصعب وهنواجهه مع بعض! ⚡`
+          ? `${greet}\nوقفي! البطل ما يستسلمش أبداً! 🦸‍♂️💛\n\nتذكري:\n⭐ سبايدرمان فشل ألف مرة قبل ما ينجح!\n⭐ صلاح الدين خسر معارك وعاد أقوى! ⚔️\n⭐ أنتِ أقوى مما تتخيلين!\n⭐ أنا مالك معكِ حتى آخر لحظة! 💪\n\nقوليلي إيه الصعب وهنواجهه مع بعض! ⚡`
           : isReena
           ? `${greet}\nالصعوبة ليست نهاية الطريق، بل بداية القوة الحقيقية. 🌙\n\n"الصبر شجرة جذورها مرّة وثمارها حلوة." 💎\nكل شيء صعب تتخطينه يجعلك أحكم.\n\nأخبريني بما يصعبكِ وسنفكر فيه معاً بهدوء. 📖`
           : `${greet}\nيا حبيبتي قوليلي! 😊💛\nحتى ماريا بتيأس أحياناً من الواجب! 😂\nبس بعدها بتعدي — وتضحك على نفسها!\n\nإيه اللي صعّبك؟ هنشيله مع بعض! 🎉`,
@@ -351,7 +365,7 @@ async function startServer() {
         text: isMalik
           ? pick([
               `${greet}\nرياضيات؟ المعركة المفضلة! 🦸‍♂️🔢\nكتبي المسألة وأنا أحلها معاكِ! 💥`,
-              `${greet}\nسبايدرمان بيحسب زوايا تأرجحه — وأنا بحسب معاكِ! 😄⚡\nقوليلي المسألة!`,
+              `${greet}\nسبايدرمان بيحسب زوايا تأرجحه وسيف ذو يزن كان يحسب حركات المعارك! 😄⚡\nقوليلي المسألة!`,
               `${greet}\nخطة الهجوم:\n⚡ الجمع = ضم القوى\n⚡ الطرح = حسم العوائق\n⚡ الضرب = مضاعفة القوة!\nقوليلي المسألة! 💪`,
             ])
           : isReena
@@ -393,7 +407,7 @@ async function startServer() {
         text: isMalik
           ? pick([
               `${greet}\nاللغة العربية سلاح البطل الحقيقي! ⚔️🦸‍♂️\nالكلمة الصحيحة أقوى من أي ضربة!\nقوليلي السؤال! 💥`,
-              `${greet}\nحتى سبايدرمان لو اتكلم عربي كان أقوى بكتير! 😄\nقوليلي السؤال! 💪`,
+              `${greet}\nعنترة كان شاعراً فارساً — اللغة العربية سلاح الأبطال الأصيل! ⚔️😄\nقوليلي السؤال! 💪`,
             ])
           : isReena
           ? pick([
@@ -412,7 +426,7 @@ async function startServer() {
       return {
         text: isMalik
           ? pick([
-              `${greet}\nامتحان؟ معركة! مذاكرة؟ تدريب! 🦸‍♂️💥\nباتمان ذاكر كل حاجة قبل ما يحارب! 😄\n\nخطة التدريب:\n⚡ 25 دقيقة تركيز\n⚡ 5 دقيقة راحة\n⚡ راجعي المعلومات!\n\nأي مادة نبدأ؟ 💪`,
+              `${greet}\nامتحان؟ معركة! مذاكرة؟ تدريب! 🦸‍♂️💥\nباتمان ذاكر كل حاجة قبل ما يحارب — وصلاح الدين كان يخطط قبل كل معركة! ⚔️😄\n\nخطة التدريب:\n⚡ 25 دقيقة تركيز\n⚡ 5 دقيقة راحة\n⚡ راجعي المعلومات!\n\nأي مادة نبدأ؟ 💪`,
               `${greet}\nكل درس تذاكريه = تدريب قوة! 🦸‍♂️⚡\nأي مادة؟ 💪`,
               `${greet}\n${pick(MALIK_HERO_FACTS)}\nكلهم ذاكروا! أنتِ زيهم! 💪\nأي مادة الصعبة؟ ⚡`,
             ])
@@ -433,7 +447,7 @@ async function startServer() {
       return {
         text: isMalik
           ? pick([
-              `${greet}\nحتى سبايدرمان بيحس بخوف أحياناً! 🦸‍♂️💛\nبس البطل بيقول خايف بس رايح!\nقوليلي إيه اللي بتحسي بيه! ⚡`,
+              `${greet}\nحتى سبايدرمان وعنترة حسوا بخوف! 🦸‍♂️💛⚔️\nبس البطل بيقول خايف بس رايح!\nقوليلي إيه اللي بتحسي بيه! ⚡`,
               `${greet}\nالمشاعر مش ضعف — دي إنسانية! 💛🦸‍♂️\nأنا مالك ومعاكِ! قوليلي! 💪`,
             ])
           : isReena
@@ -598,6 +612,196 @@ async function startServer() {
   // Diagnostic Endpoint
   app.get("/api/ping", (req, res) => {
     res.json({ pong: true, time: new Date().toISOString(), status: "running" });
+  });
+
+  // Contact form — sends an email to the platform owner via Replit Mail
+  app.post("/api/contact", async (req, res) => {
+    try {
+      const name = sanitizeText(req.body?.name);
+      const email = sanitizeText(req.body?.email);
+      const phone = sanitizeText(req.body?.phone);
+      const subject = sanitizeText(req.body?.subject);
+      const message = typeof req.body?.message === "string"
+        ? req.body.message.replace(/[<>`$]/g, "").trim().slice(0, 5000)
+        : "";
+
+      if (!name || !email || !message) {
+        return res.status(400).json({ success: false, error: "الاسم والإيميل والرسالة مطلوبة" });
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ success: false, error: "الإيميل غير صحيح" });
+      }
+
+      const finalSubject = `[تواصل من نادي البطلات] ${subject || "رسالة جديدة من " + name}`;
+      const text = `رسالة جديدة من نموذج تواصل نادي البطلات الصغيرات\n\n` +
+        `الاسم: ${name}\n` +
+        `الإيميل: ${email}\n` +
+        `الهاتف: ${phone || "—"}\n` +
+        `الموضوع: ${subject || "—"}\n\n` +
+        `الرسالة:\n${message}\n\n` +
+        `— أرسلت في ${new Date().toLocaleString("ar-EG")}`;
+
+      const html = `
+        <div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff5f7;padding:24px;border-radius:16px;border:1px solid #fbcfe8">
+          <div style="background:linear-gradient(135deg,#f472b6,#ec4899);color:white;padding:16px 20px;border-radius:12px;margin-bottom:20px;text-align:center">
+            <h2 style="margin:0;font-size:20px">رسالة جديدة من نادي البطلات الصغيرات ✨</h2>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:14px;color:#831843">
+            <tr><td style="padding:8px;font-weight:bold;width:100px">الاسم:</td><td style="padding:8px">${name}</td></tr>
+            <tr><td style="padding:8px;font-weight:bold">الإيميل:</td><td style="padding:8px"><a href="mailto:${email}" style="color:#ec4899">${email}</a></td></tr>
+            <tr><td style="padding:8px;font-weight:bold">الهاتف:</td><td style="padding:8px">${phone || "—"}</td></tr>
+            <tr><td style="padding:8px;font-weight:bold">الموضوع:</td><td style="padding:8px">${subject || "—"}</td></tr>
+          </table>
+          <div style="margin-top:20px;background:white;padding:16px;border-radius:12px;border-right:4px solid #ec4899">
+            <div style="font-weight:bold;color:#831843;margin-bottom:8px">الرسالة:</div>
+            <div style="color:#4c0519;line-height:1.8;white-space:pre-wrap">${message.replace(/\n/g, "<br/>")}</div>
+          </div>
+          <div style="margin-top:16px;text-align:center;font-size:12px;color:#9d174d">
+            أُرسلت تلقائياً من نموذج التواصل · ${new Date().toLocaleString("ar-EG")}
+          </div>
+        </div>
+      `;
+
+      try {
+        const result = await sendEmail({ subject: finalSubject, text, html });
+        res.json({ success: true, messageId: result.messageId });
+      } catch (mailErr: any) {
+        console.error("Replit Mail failed, falling back to nodemailer:", mailErr?.message);
+        // Fallback: try nodemailer if SMTP is configured
+        if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+          const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: parseInt(process.env.SMTP_PORT || "587"),
+            secure: process.env.SMTP_SECURE === "true",
+            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+          });
+          const info = await transporter.sendMail({
+            from: `"نادي البطلات" <${process.env.SMTP_USER}>`,
+            to: process.env.CONTACT_EMAIL || "rorofikri@gmail.com",
+            replyTo: email,
+            subject: finalSubject,
+            text,
+            html,
+          });
+          return res.json({ success: true, messageId: info.messageId });
+        }
+        throw mailErr;
+      }
+    } catch (err: any) {
+      console.error("/api/contact error:", err);
+      res.status(500).json({ success: false, error: err?.message || "فشل إرسال الرسالة" });
+    }
+  });
+
+  // Simple in-memory rate limiter for recovery endpoint (per IP)
+  const recoveryAttempts = new Map<string, number[]>();
+  const RECOVERY_WINDOW_MS = 10 * 60 * 1000;
+  const RECOVERY_MAX = 3;
+
+  app.post("/api/send-recovery", async (req, res) => {
+    try {
+      // Origin check — only accept requests coming from the app itself
+      const origin = String(req.headers.origin || req.headers.referer || "");
+      const host = String(req.headers.host || "");
+      const allowed = !origin || origin.includes(host) || origin.includes("replit.dev") || origin.includes("replit.app") || origin.includes("localhost");
+      if (!allowed) {
+        return res.status(403).json({ success: false, error: "غير مسموح" });
+      }
+
+      // Rate limit per IP
+      const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+      const now = Date.now();
+      const arr = (recoveryAttempts.get(ip) || []).filter((t) => now - t < RECOVERY_WINDOW_MS);
+      if (arr.length >= RECOVERY_MAX) {
+        return res.status(429).json({ success: false, error: "حاولتِ كثيراً، انتظري قليلاً ثم أعيدي المحاولة" });
+      }
+      arr.push(now);
+      recoveryAttempts.set(ip, arr);
+
+      const to = sanitizeText(req.body?.to);
+      const childName = sanitizeText(req.body?.childName);
+      const pin = sanitizeText(req.body?.pin);
+      const parentName = sanitizeText(req.body?.parentName) || "ولي الأمر";
+
+      if (!to || !childName || !pin) {
+        return res.status(400).json({ success: false, error: "بيانات ناقصة" });
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+        return res.status(400).json({ success: false, error: "إيميل غير صحيح" });
+      }
+      if (!/^[0-9]{3,8}$/.test(pin)) {
+        return res.status(400).json({ success: false, error: "رمز غير صالح" });
+      }
+
+      const subject = `🔐 استعادة الرمز السري للبطلة ${childName} — نادي البطلات الصغيرات`;
+      const text =
+        `مرحباً ${parentName}،\n\n` +
+        `طلبت البطلة ${childName} استعادة رمزها السري لدخول نادي البطلات الصغيرات.\n\n` +
+        `الرمز السري: ${pin}\n\n` +
+        `يمكنك مساعدتها على الدخول باستخدام هذا الرمز، أو تغييره من لوحة تحكم ولي الأمر.\n\n` +
+        `— نادي البطلات الصغيرات\n${new Date().toLocaleString("ar-EG")}`;
+      const html = `
+        <div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;max-width:560px;margin:0 auto;background:#fff5f7;padding:24px;border-radius:16px;border:1px solid #fbcfe8">
+          <div style="background:linear-gradient(135deg,#f472b6,#ec4899);color:white;padding:18px 20px;border-radius:14px;margin-bottom:20px;text-align:center">
+            <h2 style="margin:0;font-size:20px">🔐 استعادة الرمز السري</h2>
+            <p style="margin:6px 0 0;font-size:13px;opacity:0.95">نادي البطلات الصغيرات ✨</p>
+          </div>
+          <p style="color:#831843;font-size:15px;line-height:1.9">مرحباً <strong>${parentName}</strong>،</p>
+          <p style="color:#4c0519;font-size:14px;line-height:1.9">
+            طلبت البطلة <strong style="color:#be185d">${childName}</strong> استعادة رمزها السري لدخول نادي البطلات الصغيرات.
+          </p>
+          <div style="margin:20px 0;background:white;padding:18px;border-radius:14px;border-right:4px solid #ec4899;text-align:center">
+            <div style="color:#9d174d;font-size:12px;margin-bottom:8px;font-weight:bold">الرمز السري</div>
+            <div style="font-size:32px;font-weight:900;letter-spacing:8px;color:#831843;font-family:'Courier New',monospace">${pin}</div>
+          </div>
+          <p style="color:#4c0519;font-size:13px;line-height:1.8">
+            يمكنك مساعدتها على الدخول باستخدام هذا الرمز، أو تغييره من لوحة تحكم ولي الأمر.
+          </p>
+          <div style="margin-top:20px;text-align:center;font-size:11px;color:#9d174d;border-top:1px dashed #fbcfe8;padding-top:12px">
+            أُرسلت تلقائياً · ${new Date().toLocaleString("ar-EG")}
+          </div>
+        </div>
+      `;
+
+      // 1. Try SMTP first to deliver directly to parent's email
+      if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+        try {
+          const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: parseInt(process.env.SMTP_PORT || "587"),
+            secure: process.env.SMTP_SECURE === "true",
+            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+          });
+          const info = await transporter.sendMail({
+            from: `"نادي البطلات الصغيرات" <${process.env.SMTP_USER}>`,
+            to,
+            subject,
+            text,
+            html,
+          });
+          return res.json({ success: true, channel: "smtp", messageId: info.messageId });
+        } catch (smtpErr: any) {
+          console.error("SMTP recovery send failed:", smtpErr?.message);
+        }
+      }
+
+      // 2. Fallback: Replit Mail to admin (verified Replit email) with parent address in subject
+      const adminSubject = `[تحويل إلى ${to}] ${subject}`;
+      const adminHtml =
+        `<div dir="rtl" style="background:#fef3c7;border:2px solid #fbbf24;padding:14px;border-radius:12px;margin-bottom:16px;font-family:Tahoma">` +
+        `<strong>⚠️ تنبيه إداري:</strong> طلب استعادة رمز. يرجى تحويل هذه الرسالة يدوياً إلى ولي الأمر: ` +
+        `<a href="mailto:${to}" style="color:#b45309">${to}</a></div>` + html;
+      try {
+        const result = await sendEmail({ subject: adminSubject, text: `تحويل إلى: ${to}\n\n` + text, html: adminHtml });
+        return res.json({ success: true, channel: "admin-relay", messageId: result.messageId });
+      } catch (mailErr: any) {
+        console.error("Replit Mail fallback failed:", mailErr?.message);
+        throw mailErr;
+      }
+    } catch (err: any) {
+      console.error("/api/send-recovery error:", err);
+      res.status(500).json({ success: false, error: err?.message || "فشل إرسال الرمز" });
+    }
   });
 
   app.get("/api/admin/check-config", (req, res) => {
@@ -1100,6 +1304,11 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    try {
+      startFcmWatcher();
+    } catch (e) {
+      console.warn("[fcm] watcher start failed:", (e as Error).message);
+    }
   });
 }
 

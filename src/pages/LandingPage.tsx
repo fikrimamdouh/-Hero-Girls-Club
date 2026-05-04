@@ -2,6 +2,16 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Star, Sparkles, Heart, Shield, Palette, Users, Moon, Lock, ArrowRight, Info, MapPin, Cloud, Settings } from 'lucide-react';
+import { GiQueenCrown, GiFairyWand, GiUnicorn } from 'react-icons/gi';
+import { HiShieldCheck } from 'react-icons/hi2';
+import HeroScene from '../components/landing/HeroScene';
+import EntryCard from '../components/landing/EntryCard';
+import ChildLoginPanel from '../components/landing/ChildLoginPanel';
+import WhatsInsideSection from '../components/landing/WhatsInsideSection';
+import JoinCTASection from '../components/landing/JoinCTASection';
+import BrandFooter from '../components/landing/BrandFooter';
+import StatsStrip from '../components/landing/StatsStrip';
+import HowItWorksSection from '../components/landing/HowItWorksSection';
 import { auth, db } from '../firebase';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, getDocs, setDoc, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
@@ -15,8 +25,6 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
   const [childName, setChildName] = useState('');
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isPatternMode, setIsPatternMode] = useState(false);
-  const [loginPattern, setLoginPattern] = useState<number[]>([]);
 
   const handleParentLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -249,6 +257,63 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
     return result;
   };
 
+  const handleRecoverPin = async (rawName: string) => {
+    const name = rawName.trim();
+    if (!name) throw new Error('من فضلك اكتبي اسمكِ أولاً');
+
+    // 1. Find child profile (same lookup logic as login)
+    const qName = query(collection(db, 'children_profiles'), where('name', '==', name));
+    const qHero = query(collection(db, 'children_profiles'), where('heroName', '==', name));
+    let snap = await getDocs(qName);
+    if (snap.empty) snap = await getDocs(qHero);
+    let target = !snap.empty ? snap.docs[0] : null;
+
+    if (!target) {
+      const all = await getDocs(collection(db, 'children_profiles'));
+      const norm = normalizeArabic(name);
+      target = all.docs.find((d) => {
+        const dat = d.data();
+        return normalizeArabic(dat.name || '') === norm || normalizeArabic(dat.heroName || '') === norm;
+      }) || null;
+      if (!target && norm.length >= 2) {
+        target = all.docs.find((d) => {
+          const dat = d.data();
+          const a = normalizeArabic(dat.name || '');
+          const b = normalizeArabic(dat.heroName || '');
+          return a.includes(norm) || b.includes(norm) || norm.includes(a) || norm.includes(b);
+        }) || null;
+      }
+    }
+
+    if (!target) throw new Error('لم نجد بطلة بهذا الاسم');
+
+    const childData = target.data() as ChildProfile;
+    if (!childData.parentId) throw new Error('لا يوجد ولي أمر مرتبط');
+    if (!childData.pin) throw new Error('لا يوجد رمز محفوظ');
+
+    // 2. Lookup parent's email
+    const parentSnap = await getDoc(doc(db, 'users', childData.parentId));
+    if (!parentSnap.exists()) throw new Error('لم نجد ولي الأمر');
+    const parentData = parentSnap.data() as { email?: string; displayName?: string; name?: string };
+    const parentEmail = parentData.email;
+    if (!parentEmail) throw new Error('لا يوجد إيميل مسجل لولي الأمر');
+
+    // 3. Send recovery email via backend
+    const res = await fetch('/api/send-recovery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: parentEmail,
+        childName: childData.heroName || childData.name,
+        pin: childData.pin,
+        parentName: parentData.displayName || parentData.name || 'ولي الأمر',
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'تعذر إرسال البريد');
+    toast.success('تم إرسال الرمز إلى إيميل ولي الأمر ✉️');
+  };
+
   const handleChildLogin = async () => {
     const rawName = childName.trim();
     if (!rawName || !pin) {
@@ -347,138 +412,138 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-fuchsia-950 via-violet-900 to-indigo-950 px-4 py-8 text-center sm:px-6 lg:px-8">
-      {/* Magical Background Elements */}
+    <div className="relative flex min-h-screen flex-col items-center overflow-hidden bg-gradient-to-br from-rose-50 via-pink-50 to-amber-50 px-4 py-8 sm:px-6 lg:px-8">
+      {/* Background mesh + soft aurora */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <motion.div 
-          animate={{ x: ['-100%', '100vw'] }}
-          transition={{ duration: 30, repeat: Infinity, ease: 'linear' }}
-          className="absolute top-16 opacity-30 sm:top-20"
-        >
-          <Cloud className="w-32 h-32 text-blue-200" />
-        </motion.div>
-        <motion.div 
-          animate={{ x: ['100vw', '-100%'] }}
-          transition={{ duration: 40, repeat: Infinity, ease: 'linear' }}
-          className="absolute top-56 opacity-20 sm:top-60"
-        >
-          <Cloud className="w-48 h-48 text-pink-200" />
-        </motion.div>
-
-        {/* Floating Dolls/Characters */}
-        <motion.div 
-          animate={{ y: [0, -40, 0], rotate: [0, 5, 0] }}
-          transition={{ duration: 6, repeat: Infinity }}
-          className="absolute left-[8%] top-40 hidden text-7xl drop-shadow-sm lg:block xl:text-8xl doll-bounce"
-        >
-          👸
-        </motion.div>
-        <motion.div 
-          animate={{ y: [0, -30, 0], rotate: [0, -5, 0] }}
-          transition={{ duration: 5, repeat: Infinity, delay: 1 }}
-          className="absolute bottom-36 right-[8%] hidden text-7xl drop-shadow-sm lg:block xl:text-8xl doll-bounce"
-        >
-          🧚‍♀️
-        </motion.div>
-        <motion.div 
-          animate={{ y: [0, -20, 0], scale: [1, 1.1, 1] }}
-          transition={{ duration: 4, repeat: Infinity, delay: 2 }}
-          className="absolute left-[4%] top-1/2 hidden text-6xl drop-shadow-sm lg:block xl:text-7xl doll-bounce"
-        >
-          🦄
-        </motion.div>
-        <motion.div 
-          animate={{ y: [0, -25, 0], scale: [1, 1.05, 1] }}
-          transition={{ duration: 7, repeat: Infinity, delay: 0.5 }}
-          className="absolute right-[4%] top-1/4 hidden text-6xl drop-shadow-sm lg:block xl:text-7xl doll-bounce"
-        >
-          🦋
-        </motion.div>
-
-        <motion.div 
-          animate={{ y: [0, -20, 0], opacity: [0.4, 0.7, 0.4] }}
-          transition={{ duration: 5, repeat: Infinity }}
-          className="absolute left-0 top-6 h-96 w-96 rounded-full bg-pink-600/30 blur-3xl sm:left-10 sm:top-10"
-        />
-        <motion.div 
-          animate={{ y: [0, 20, 0], opacity: [0.3, 0.6, 0.3] }}
-          transition={{ duration: 7, repeat: Infinity }}
-          className="absolute bottom-0 right-0 h-[28rem] w-[28rem] rounded-full bg-violet-600/25 blur-3xl sm:bottom-10 sm:right-10"
+        <motion.div
+          animate={{ x: [0, 40, 0], y: [0, -20, 0], opacity: [0.4, 0.6, 0.4] }}
+          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute -left-20 -top-10 h-[32rem] w-[32rem] rounded-full bg-rose-200/55 blur-[120px]"
         />
         <motion.div
-          animate={{ scale: [1, 1.2, 1], opacity: [0.15, 0.3, 0.15] }}
-          transition={{ duration: 9, repeat: Infinity }}
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[40rem] w-[40rem] rounded-full bg-fuchsia-500/15 blur-3xl"
+          animate={{ x: [0, -30, 0], y: [0, 30, 0], opacity: [0.4, 0.6, 0.4] }}
+          transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute -right-20 top-1/3 h-[34rem] w-[34rem] rounded-full bg-pink-200/55 blur-[120px]"
+        />
+        <motion.div
+          animate={{ scale: [1, 1.15, 1], opacity: [0.25, 0.4, 0.25] }}
+          transition={{ duration: 10, repeat: Infinity }}
+          className="absolute bottom-0 left-1/2 h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-amber-200/50 blur-[140px]"
+        />
+        {/* Subtle grid */}
+        <div
+          className="absolute inset-0 opacity-[0.04]"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(190,24,93,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(190,24,93,0.5) 1px, transparent 1px)',
+            backgroundSize: '64px 64px',
+          }}
         />
         {/* Star particles */}
-        {[...Array(12)].map((_, i) => (
+        {[...Array(16)].map((_, i) => (
           <motion.div
             key={i}
-            animate={{ y: [0, -30, 0], opacity: [0, 1, 0] }}
-            transition={{ duration: 3 + (i % 4), repeat: Infinity, delay: i * 0.4 }}
-            className="absolute text-white/20 text-xs"
-            style={{ left: `${8 + (i * 7.5) % 84}%`, top: `${10 + (i * 13) % 80}%` }}
+            animate={{ y: [0, -30, 0], opacity: [0, 0.6, 0] }}
+            transition={{ duration: 3 + (i % 4), repeat: Infinity, delay: i * 0.3 }}
+            className="absolute text-xs text-rose-300"
+            style={{ left: `${4 + (i * 6.1) % 92}%`, top: `${6 + (i * 9.3) % 88}%` }}
           >✦</motion.div>
         ))}
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
+      {/* Top brand bar */}
+      <motion.header
+        initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8 }}
-        className="relative z-10 w-full max-w-4xl rounded-[2.5rem] border border-white/15 bg-white/10 p-6 shadow-[0_32px_100px_rgba(0,0,0,0.5)] backdrop-blur-2xl sm:p-8 md:p-12 lg:p-14"
+        className="relative z-20 mb-8 flex w-full max-w-6xl items-center justify-between"
       >
-        <div className="mb-8 flex justify-center sm:mb-10">
-          <div className="relative">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 15, repeat: Infinity, ease: 'linear' }}
-              className="absolute -inset-8 rounded-full bg-gradient-to-r from-pink-500 via-fuchsia-500 to-amber-400 blur-3xl opacity-50"
-            />
-            <div className="relative z-10 flex h-28 w-28 items-center justify-center rounded-3xl bg-gradient-to-br from-amber-400 via-pink-500 to-fuchsia-600 shadow-[0_0_60px_rgba(236,72,153,0.6)] sm:h-32 sm:w-32 md:h-36 md:w-36">
-              <Star className="h-16 w-16 text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.3)] sm:h-20 sm:w-20 md:h-24 md:w-24" />
-            </div>
-            <Sparkles className="absolute -right-3 -top-3 z-20 h-10 w-10 animate-bounce text-amber-300 sm:-right-4 sm:-top-4 sm:h-12 sm:w-12 md:h-14 md:w-14" />
-            <Heart className="absolute -bottom-2 -left-3 z-20 h-8 w-8 animate-pulse text-pink-300 sm:-left-4 sm:h-10 sm:w-10" />
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 via-pink-500 to-fuchsia-600 shadow-[0_0_24px_rgba(236,72,153,0.5)] sm:h-12 sm:w-12">
+            <GiQueenCrown className="h-6 w-6 text-white sm:h-7 sm:w-7" />
+          </div>
+          <div className="text-right">
+            <div className="font-arabic text-base font-extrabold leading-tight text-rose-950 sm:text-lg">نادي البطلات</div>
+            <div className="font-arabic text-[10px] text-rose-700 sm:text-xs">عالم آمن للفتيات</div>
           </div>
         </div>
+        <div className="hidden items-center gap-2 rounded-full bg-white px-3 py-1.5 shadow-sm ring-1 ring-rose-100 sm:flex">
+          <HiShieldCheck className="h-4 w-4 text-emerald-500" />
+          <span className="font-arabic text-xs font-bold text-rose-700">منصة معتمدة بإشراف ولي الأمر</span>
+        </div>
+      </motion.header>
 
-        <h1 className="sparkle-text mb-4 font-arabic text-4xl font-extrabold leading-[1.15] tracking-tight sm:mb-5 sm:text-5xl md:text-6xl lg:text-7xl">
-          نادي البطلات الصغيرات
-        </h1>
-        <p className="mx-auto mb-10 max-w-2xl font-arabic text-lg leading-8 text-white/75 sm:mb-12 sm:text-xl md:text-2xl">
-          عالم سحري آمن للبطلات الصغيرات - حيث تلتقي الشجاعة بالخيال والمغامرة! ✨
-        </p>
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8 }}
+        className="relative z-10 grid w-full max-w-6xl grid-cols-1 items-center gap-8 rounded-[2.5rem] bg-white/80 p-5 shadow-[0_30px_80px_-20px_rgba(244,63,94,0.35)] ring-1 ring-rose-100 backdrop-blur-xl sm:p-8 md:p-10 lg:grid-cols-12 lg:gap-10 lg:p-12"
+      >
+        {/* Left: Hero illustration (desktop) */}
+        <div className="order-2 hidden lg:order-1 lg:col-span-5 lg:block">
+          <HeroScene />
+        </div>
+
+        {/* Right: Title + content */}
+        <div className="order-1 text-center lg:order-2 lg:col-span-7 lg:text-right">
+          {/* Mobile mini scene */}
+          <div className="mx-auto mb-6 max-w-xs lg:hidden">
+            <HeroScene />
+          </div>
+
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-rose-100 to-pink-100 px-3 py-1.5 ring-1 ring-rose-200">
+            <GiFairyWand className="h-4 w-4 text-pink-600" />
+            <span className="font-arabic text-[11px] font-bold text-rose-700 sm:text-xs">نادي خاص للبطلات الصغيرات</span>
+          </div>
+
+          <h1 className="mb-3 font-arabic text-4xl font-black leading-[1.1] tracking-tight text-rose-950 sm:text-5xl md:text-6xl">
+            نادي <span className="bg-gradient-to-r from-rose-500 via-pink-500 to-fuchsia-500 bg-clip-text text-transparent">البطلات</span> الصغيرات
+          </h1>
+          <p className="mb-8 font-arabic text-base leading-8 text-rose-700/85 sm:text-lg md:text-xl lg:max-w-xl">
+            عالم سحري متكامل: ألعاب، قصص، فنون، أنشطة، ومكافآت
+            <br className="hidden sm:block" />
+            <span className="text-rose-600/70">مكان آمن للبطلة، ولوحة كاملة لولي الأمر.</span>
+          </p>
 
         <AnimatePresence mode="wait">
           {!showPinLogin && !showRegister ? (
             <motion.div
               key="buttons"
-              initial={{ opacity: 0, scale: 0.9 }}
+              initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="mb-10 grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-2 md:gap-6"
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="space-y-4"
             >
-              <button
-                onClick={handleParentLogin}
-                className="flex items-center justify-center gap-3 rounded-2xl border border-rose-200/70 bg-gradient-to-r from-rose-400 to-pink-500 px-8 py-4 text-base font-bold text-white shadow-[0_12px_30px_rgba(244,114,182,0.28)] transition-all hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(244,114,182,0.34)] active:scale-[0.98] sm:text-lg"
-              >
-                <Shield className="h-6 w-6" />
-                {user ? 'لوحة ولي الأمر' : 'دخول ولي الأمر'}
-              </button>
-              <button
+              <EntryCard
+                variant="cartoon"
+                badge="ابدئي اللعب"
+                icon={<GiUnicorn />}
+                title="دخول البطلة الصغيرة"
+                subtitle="ادخلي باسمك ورمزك السري وابدئي مغامرتك"
                 onClick={() => setShowPinLogin(true)}
-                className="flex items-center justify-center gap-3 rounded-2xl border border-violet-200/70 bg-gradient-to-r from-violet-500 to-fuchsia-500 px-8 py-4 text-base font-bold text-white shadow-[0_12px_30px_rgba(139,92,246,0.28)] transition-all hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(139,92,246,0.34)] active:scale-[0.98] sm:text-lg"
-              >
-                <Star className="h-6 w-6" />
-                دخول البطلة الصغيرة
-              </button>
+              />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <EntryCard
+                  variant="elegant"
+                  icon={<Shield className="h-7 w-7" />}
+                  title={user ? 'لوحة ولي الأمر' : 'دخول ولي الأمر'}
+                  subtitle="تابعي تقدم بطلتك"
+                  onClick={handleParentLogin}
+                />
+                <EntryCard
+                  variant="modern"
+                  icon={<Sparkles className="h-7 w-7" />}
+                  title="انضمام بطلة جديدة"
+                  subtitle="سجّلي حساب جديد"
+                  onClick={() => setShowRegister(true)}
+                />
+              </div>
+
               {user?.email === 'rorofikri@gmail.com' && (
                 <button
                   onClick={() => navigate('/admin')}
-                  className="md:col-span-2 flex items-center justify-center gap-3 rounded-2xl bg-slate-800 px-8 py-4 text-base font-bold text-white shadow-lg transition-all hover:bg-slate-900 sm:text-lg"
+                  className="flex w-full items-center justify-center gap-3 rounded-2xl bg-rose-950 px-8 py-3.5 text-sm font-bold text-white shadow-lg transition-all hover:bg-rose-900 sm:text-base"
                 >
-                  <Shield className="h-6 w-6" />
+                  <Shield className="h-5 w-5" />
                   لوحة الإدارة (للمدير)
                 </button>
               )}
@@ -489,18 +554,11 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
                     localStorage.removeItem('active_child');
                     window.location.reload();
                   }}
-                  className="md:col-span-2 text-sm font-bold text-slate-400 transition-colors hover:text-rose-500"
+                  className="block w-full text-center text-sm font-bold text-rose-700 transition-colors hover:text-rose-900"
                 >
                   تسجيل خروج ({user.email})
                 </button>
               )}
-              <button
-                onClick={() => setShowRegister(true)}
-                className="md:col-span-2 flex items-center justify-center gap-3 rounded-2xl border border-amber-200/70 bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 px-8 py-5 text-lg font-extrabold text-white shadow-[0_16px_36px_rgba(251,146,60,0.28)] transition-all hover:-translate-y-0.5 hover:shadow-[0_20px_40px_rgba(251,146,60,0.34)] active:scale-[0.98] sm:text-xl"
-              >
-                <Sparkles className="h-8 w-8" />
-                طلب انضمام بطلة جديدة
-              </button>
             </motion.div>
           ) : showRegister ? (
             <motion.div
@@ -508,7 +566,7 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="relative mb-8 space-y-6 overflow-hidden rounded-[2rem] border border-white/20 bg-white/10 backdrop-blur-xl p-5 text-right shadow-[0_20px_60px_rgba(0,0,0,0.3)] sm:p-7 md:p-8"
+              className="relative space-y-6 overflow-hidden rounded-[2rem] bg-gradient-to-br from-rose-950 via-rose-900 to-pink-900 p-5 text-right shadow-[0_20px_60px_rgba(0,0,0,0.3)] ring-1 ring-rose-200/20 sm:p-7 md:p-8"
             >
               {/* Progress Bar */}
               <div className="relative mb-8 flex justify-between gap-2">
@@ -551,7 +609,7 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
                         type="text"
                         value={regData.parentName}
                         onChange={(e) => setRegData({...regData, parentName: e.target.value})}
-                        className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-white shadow-sm outline-none transition-all placeholder:text-white/40 focus:border-pink-400/60 focus:bg-white/15 focus:shadow-[0_0_0_4px_rgba(236,72,153,0.2)]"
+                        className="w-full rounded-2xl border border-white/40 bg-white px-4 py-4 text-rose-950 shadow-sm outline-none transition-all placeholder:text-rose-400 focus:border-pink-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(244,114,182,0.35)]"
                         placeholder="الاسم الكامل"
                       />
                     </div>
@@ -561,7 +619,7 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
                         type="email"
                         value={regData.email}
                         onChange={(e) => setRegData({...regData, email: e.target.value})}
-                        className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-white shadow-sm outline-none transition-all placeholder:text-white/40 focus:border-pink-400/60 focus:bg-white/15 focus:shadow-[0_0_0_4px_rgba(236,72,153,0.2)]"
+                        className="w-full rounded-2xl border border-white/40 bg-white px-4 py-4 text-rose-950 shadow-sm outline-none transition-all placeholder:text-rose-400 focus:border-pink-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(244,114,182,0.35)]"
                         placeholder="example@mail.com"
                       />
                     </div>
@@ -571,7 +629,7 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
                         type="tel"
                         value={regData.phone}
                         onChange={(e) => setRegData({...regData, phone: e.target.value})}
-                        className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-left text-white shadow-sm outline-none transition-all placeholder:text-white/40 focus:border-pink-400/60 focus:bg-white/15 focus:shadow-[0_0_0_4px_rgba(236,72,153,0.2)]"
+                        className="w-full rounded-2xl border border-white/40 bg-white px-4 py-4 text-left text-rose-950 shadow-sm outline-none transition-all placeholder:text-rose-400 focus:border-pink-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(244,114,182,0.35)]"
                         dir="ltr"
                         placeholder="+20 1xxxxxxxxx"
                       />
@@ -624,7 +682,7 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
                         type="text"
                         value={regData.realName}
                         onChange={(e) => setRegData({...regData, realName: e.target.value})}
-                        className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-white shadow-sm outline-none transition-all placeholder:text-white/40 focus:border-pink-400/60 focus:bg-white/15 focus:shadow-[0_0_0_4px_rgba(236,72,153,0.2)]"
+                        className="w-full rounded-2xl border border-white/40 bg-white px-4 py-4 text-rose-950 shadow-sm outline-none transition-all placeholder:text-rose-400 focus:border-pink-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(244,114,182,0.35)]"
                         placeholder="مثال: سارة"
                       />
                     </div>
@@ -649,7 +707,7 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
                         type="text"
                         value={regData.heroName}
                         onChange={(e) => setRegData({...regData, heroName: e.target.value})}
-                        className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-white shadow-sm outline-none transition-all placeholder:text-white/40 focus:border-pink-400/60 focus:bg-white/15 focus:shadow-[0_0_0_4px_rgba(236,72,153,0.2)]"
+                        className="w-full rounded-2xl border border-white/40 bg-white px-4 py-4 text-rose-950 shadow-sm outline-none transition-all placeholder:text-rose-400 focus:border-pink-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(244,114,182,0.35)]"
                         placeholder="او اكتبي لقبكِ الخاص.. (مثال: بطلة النجوم)"
                       />
                     </div>
@@ -697,8 +755,8 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
                     className="space-y-5"
                   >
                     <div className="mb-7 text-center">
-                      <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/20 border border-violet-400/30">
-                        <Sparkles className="h-8 w-8 text-violet-300" />
+                      <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-pink-500/20 border border-pink-400/30">
+                        <Sparkles className="h-8 w-8 text-pink-300" />
                       </div>
                       <h2 className="text-2xl font-extrabold text-white sm:text-3xl">القوة الخارقة</h2>
                       <p className="text-sm leading-7 text-white/60 sm:text-base">اختاري قوتك المميزة</p>
@@ -757,7 +815,7 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
                         type="text"
                         value={regData.city}
                         onChange={(e) => setRegData({...regData, city: e.target.value})}
-                        className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-white shadow-sm outline-none transition-all placeholder:text-white/40 focus:border-pink-400/60 focus:bg-white/15 focus:shadow-[0_0_0_4px_rgba(236,72,153,0.2)]"
+                        className="w-full rounded-2xl border border-white/40 bg-white px-4 py-4 text-rose-950 shadow-sm outline-none transition-all placeholder:text-rose-400 focus:border-pink-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(244,114,182,0.35)]"
                         placeholder="اسم المدينة"
                       />
                     </div>
@@ -767,7 +825,7 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
                         type="text"
                         value={regData.school}
                         onChange={(e) => setRegData({...regData, school: e.target.value})}
-                        className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-white shadow-sm outline-none transition-all placeholder:text-white/40 focus:border-pink-400/60 focus:bg-white/15 focus:shadow-[0_0_0_4px_rgba(236,72,153,0.2)]"
+                        className="w-full rounded-2xl border border-white/40 bg-white px-4 py-4 text-rose-950 shadow-sm outline-none transition-all placeholder:text-rose-400 focus:border-pink-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(244,114,182,0.35)]"
                         placeholder="اسم المدرسة"
                       />
                     </div>
@@ -809,7 +867,7 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
                         maxLength={4}
                         value={regData.pin}
                         onChange={(e) => setRegData({...regData, pin: e.target.value})}
-                        className="w-52 rounded-[1.75rem] border border-white/30 bg-white/10 p-6 text-center text-4xl font-bold tracking-[1rem] text-white outline-none shadow-inner backdrop-blur-md focus:border-pink-400/60 focus:bg-white/15 focus:shadow-[0_0_0_4px_rgba(236,72,153,0.2)]"
+                        className="w-52 rounded-[1.75rem] border border-white/40 bg-white p-6 text-center text-4xl font-bold tracking-[1rem] text-rose-950 outline-none shadow-inner focus:border-pink-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(244,114,182,0.35)]"
                         placeholder="****"
                       />
                     </div>
@@ -824,7 +882,7 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
                       <button
                         onClick={handleRegisterChild}
                         disabled={loading}
-                        className="rounded-2xl bg-gradient-to-r from-rose-400 via-pink-500 to-violet-500 py-4 font-bold text-white shadow-[0_16px_34px_rgba(217,70,239,0.28)] transition-all hover:shadow-[0_20px_40px_rgba(217,70,239,0.32)] disabled:opacity-50"
+                        className="rounded-2xl bg-gradient-to-r from-rose-400 via-pink-500 to-fuchsia-500 py-4 font-bold text-white shadow-[0_16px_34px_rgba(217,70,239,0.28)] transition-all hover:shadow-[0_20px_40px_rgba(217,70,239,0.32)] disabled:opacity-50"
                       >
                         {loading ? 'جاري الإرسال...' : 'إرسال طلب الانضمام'}
                       </button>
@@ -865,135 +923,54 @@ export default function LandingPage({ user }: { user: UserProfile | null }) {
               )}
             </motion.div>
           ) : (
-            <motion.div
-              key="pin-login"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="mb-8 space-y-4 rounded-[1.75rem] border border-white/20 bg-white/10 backdrop-blur-xl p-5 shadow-[0_18px_50px_rgba(0,0,0,0.3)] sm:p-6"
-            >
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/30 border border-violet-400/40">
-                  <Star className="h-6 w-6 text-violet-300" />
-                </div>
-                <h2 className="text-2xl font-extrabold text-white">دخول البطلة</h2>
-              </div>
-              <input
-                type="text"
-                placeholder="اسم البطلة"
-                value={childName}
-                onChange={(e) => setChildName(e.target.value)}
-                className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-center text-lg text-white shadow-sm outline-none transition-all placeholder:text-white/40 focus:border-violet-400/60 focus:bg-white/15 focus:shadow-[0_0_0_4px_rgba(139,92,246,0.25)] sm:text-xl"
-              />
-              
-              {!isPatternMode ? (
-                <input
-                  type="password"
-                  placeholder="الرمز السري (PIN)"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-4 text-center text-lg text-white shadow-sm outline-none transition-all placeholder:text-white/40 focus:border-violet-400/60 focus:bg-white/15 focus:shadow-[0_0_0_4px_rgba(139,92,246,0.25)] sm:text-xl"
-                />
-              ) : (
-                <div className="mt-4">
-                  <div className="mx-auto grid max-w-[220px] grid-cols-3 gap-2 rounded-2xl bg-white/10 border border-white/20 p-2">
-                    {[1,2,3,4,5,6,7,8,9].map(i => (
-                      <button
-                        key={i}
-                        onClick={() => setLoginPattern([...loginPattern, i])}
-                        className={`aspect-square rounded-xl border text-2xl font-bold transition-all ${
-                          loginPattern.includes(i) ? 'scale-110 border-violet-400 bg-violet-400 text-white shadow-md' : 'border-violet-200 bg-white text-violet-400 hover:border-violet-300'
-                        }`}
-                      >
-                        {i}
-                      </button>
-                    ))}
-                  </div>
-                  <button 
-                    onClick={() => {
-                      setPin(loginPattern.join(''));
-                      setLoginPattern([]);
-                    }}
-                    className="mt-4 text-[10px] font-bold text-violet-500 hover:underline"
-                  >
-                    تأكيد النقش
-                  </button>
-                </div>
-              )}
-
-              <button 
-                type="button"
-                onClick={() => setIsPatternMode(!isPatternMode)}
-                className="text-[10px] font-bold text-violet-400 underline hover:text-violet-600"
-              >
-                {isPatternMode ? 'استخدام الرمز الرقمي' : 'استخدام النقش السحري'}
-              </button>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={handleChildLogin}
-                  disabled={loading}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-500 to-fuchsia-500 py-4 font-bold text-white shadow-[0_14px_30px_rgba(139,92,246,0.28)] transition-all hover:shadow-[0_18px_34px_rgba(139,92,246,0.34)]"
-                >
-                  {loading ? 'جاري الدخول...' : 'انطلاق!'}
-                  <ArrowRight className="h-6 w-6" />
-                </button>
-                <button
-                  onClick={() => setShowPinLogin(false)}
-                  className="rounded-2xl border border-white/20 bg-white/10 px-6 py-4 font-bold text-white/80 transition-all hover:bg-white/15"
-                >
-                  إلغاء
-                </button>
-              </div>
-
-              {/* Quick View for Children for the logged in parent */}
-              {user && allChildren.length > 0 && (
-                <div className="mt-5 border-t border-white/15 pt-4">
-                  <p className="mb-3 text-[10px] font-bold text-white/50">أو اختاري بطلتكِ المسجلة:</p>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {allChildren.map(c => (
-                      <button
-                        key={c.uid}
-                        onClick={() => {
-                          setChildName(c.heroName || c.name);
-                          setPin(c.pin);
-                        }}
-                        className="rounded-2xl border border-violet-400/30 bg-violet-500/20 px-3 py-2 text-xs font-bold text-violet-200 transition-all hover:bg-violet-500/30"
-                      >
-                        {c.heroName || c.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </motion.div>
+            <ChildLoginPanel
+              childName={childName}
+              setChildName={setChildName}
+              pin={pin}
+              setPin={setPin}
+              loading={loading}
+              onSubmit={handleChildLogin}
+              onCancel={() => setShowPinLogin(false)}
+              onRecover={handleRecoverPin}
+              recentChildren={user ? allChildren : []}
+            />
           )}
         </AnimatePresence>
-
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-3 text-white/40 sm:gap-4">
-          <button onClick={() => navigate('/terms')} className="flex items-center gap-1 rounded-full px-3 py-2 text-sm font-medium text-white/50 transition-colors hover:bg-white/10 hover:text-white/80">
-            <Info className="h-5 w-5" />
-            <span className="font-arabic text-sm">الشروط والقوانين</span>
-          </button>
-          <Heart className="h-5 w-5 text-pink-400/60" />
-          <Palette className="h-5 w-5 text-violet-400/60" />
-          <Users className="h-5 w-5 text-sky-400/60" />
-          <Moon className="h-5 w-5 text-amber-400/60" />
-          <div className="flex items-center gap-1 rounded-full bg-white/10 border border-white/15 px-3 py-2 text-xs font-bold text-white/50">
-            <span>صُنع بحب للبطلات</span>
-            <Heart className="w-3 h-3 fill-current text-pink-400" />
-          </div>
         </div>
       </motion.div>
 
-      {/* Welcome Message Overlay */}
-      <AnimatePresence>
-        {/* Welcome Message Overlay Combined with ReenaWelcome */}
-      </AnimatePresence>
+      {/* Quick trust strip */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.4 }}
+        className="relative z-10 mt-6 mb-2 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-center"
+      >
+        <span className="font-arabic text-[11px] font-bold text-rose-700/80">🛡️ آمن 100%</span>
+        <span className="font-arabic text-[11px] font-bold text-rose-700/80">✨ بإشراف ولي الأمر</span>
+        <span className="font-arabic text-[11px] font-bold text-rose-700/80">💝 محتوى عربي أصيل</span>
+      </motion.div>
 
-      <footer className="mt-8 text-sm font-arabic text-white/30">
-        &copy; 2026 نادي البطلات الصغيرات - عالم آمن للفتيات
-      </footer>
+      {/* ─── Stats strip (modern social proof) ──────────────────────── */}
+      <StatsStrip />
+
+      {/* ─── How it works (elegant 3-step) ─────────────────────────── */}
+      <HowItWorksSection />
+
+      {/* ─── What's inside (elegant editorial) ─────────────────────── */}
+      <div className="relative z-10 w-full">
+        <WhatsInsideSection />
+      </div>
+
+      {/* ─── Final CTA (cartoon-game) ──────────────────────────────── */}
+      <div className="relative z-10 w-full">
+        <JoinCTASection onStart={() => setShowPinLogin(true)} />
+      </div>
+
+      {/* ─── Footer (full-width dark band) ─────────────────────────── */}
+      <div className="relative z-10 -mx-4 w-[calc(100%+2rem)] sm:-mx-6 sm:w-[calc(100%+3rem)] lg:-mx-8 lg:w-[calc(100%+4rem)]">
+        <BrandFooter />
+      </div>
     </div>
   );
 }

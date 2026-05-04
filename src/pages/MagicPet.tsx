@@ -10,9 +10,9 @@ import { toast } from 'sonner';
 const PET_TYPES = [
   { id: 'dragon', name: 'تنين صغير', icon: '🐲', color: 'bg-emerald-400' },
   { id: 'unicorn', name: 'يونيكورن سحري', icon: '🦄', color: 'bg-pink-400' },
-  { id: 'cat', name: 'قطة النجوم', icon: '🐱', color: 'bg-purple-400' },
+  { id: 'cat', name: 'قطة النجوم', icon: '🐱', color: 'bg-pink-400' },
   { id: 'fox', name: 'ثعلب النار', icon: '🦊', color: 'bg-orange-400' },
-  { id: 'owl', name: 'بومة الحكمة', icon: '🦉', color: 'bg-indigo-400' },
+  { id: 'owl', name: 'بومة الحكمة', icon: '🦉', color: 'bg-rose-400' },
 ];
 
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
@@ -127,7 +127,7 @@ export default function MagicPetPage() {
         <motion.div 
           animate={{ y: [0, 30, 0], opacity: [0.2, 0.4, 0.2] }}
           transition={{ duration: 10, repeat: Infinity }}
-          className="absolute bottom-20 right-20 w-[30rem] h-[30rem] bg-purple-200/20 rounded-full blur-3xl"
+          className="absolute bottom-20 right-20 w-[30rem] h-[30rem] bg-pink-200/20 rounded-full blur-3xl"
         />
       </div>
 

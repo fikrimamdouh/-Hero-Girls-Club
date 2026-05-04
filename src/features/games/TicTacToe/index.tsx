@@ -60,7 +60,7 @@ export default function TicTacToe() {
     <div className="min-h-screen bg-indigo-950 font-sans flex flex-col items-center py-8 px-4" dir="ltr">
       <div className="w-full max-w-md flex justify-between items-center mb-8">
         <button 
-          onClick={() => navigate('/child')}
+          onClick={() => navigate('/maria-games')}
           className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-white shadow-md hover:bg-white/20 transition-all"
         >
           <ArrowRight className="w-6 h-6 rotate-180" />

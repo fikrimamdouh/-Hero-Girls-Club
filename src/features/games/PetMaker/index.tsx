@@ -75,7 +75,7 @@ export default function PetMaker() {
       {/* Header */}
       <div className="w-full max-w-md flex justify-between items-center mb-8 relative z-10">
         <button 
-          onClick={() => navigate('/child')}
+          onClick={() => navigate('/maria-games')}
           className="w-12 h-12 bg-white/50 backdrop-blur-md rounded-full flex items-center justify-center text-slate-700 shadow-md hover:bg-white transition-all"
         >
           <ArrowRight className="w-6 h-6" />

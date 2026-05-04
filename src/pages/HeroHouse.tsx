@@ -5,12 +5,12 @@ import JitsiCallEmbed from '../components/JitsiCallEmbed';
 import {
   Send, LogOut, Camera, Palette, Wand2, Plus, Trash2, Gamepad2,
   X, Minus, RotateCw, Shirt, Save, Check, MessageCircle, Tv2, Music2, VolumeX, Volume2,
-  Video, VideoOff, UserPlus, Users, PhoneOff
+  Video, VideoOff, UserPlus, Users, PhoneOff, Share2
 } from 'lucide-react';
-import { db } from '../firebase';
+import { db, storage } from '../firebase';
 import {
   doc, onSnapshot, collection, addDoc, query, where, orderBy,
-  updateDoc, getDoc, setDoc, deleteField, getDocs
+  updateDoc, getDoc, setDoc, deleteField, getDocs, increment, runTransaction
 } from 'firebase/firestore';
 import { ChildProfile, VisitRequest, AvatarConfig, HouseItem, RoomConfig, HouseSession, HouseMessage, HouseVisitor, FriendRequest } from '../types';
 import { toast } from 'sonner';
@@ -146,10 +146,10 @@ type WardrobeTab = 'dresses' | 'hair' | 'accessories' | 'skinColor';
 const WALLPAPER_OPTIONS = [
   { id: 'pink-stars', class: 'bg-gradient-to-b from-pink-100 to-rose-200', label: 'نجوم وردية', icon: '⭐' },
   { id: 'blue-clouds', class: 'bg-gradient-to-b from-sky-100 to-blue-200', label: 'غيوم زرقاء', icon: '☁️' },
-  { id: 'purple-magic', class: 'bg-gradient-to-b from-purple-100 to-indigo-200', label: 'سحر بنفسجي', icon: '✨' },
+  { id: 'purple-magic', class: 'bg-gradient-to-b from-pink-100 to-rose-200', label: 'سحر بنفسجي', icon: '✨' },
   { id: 'green-nature', class: 'bg-gradient-to-b from-emerald-100 to-teal-200', label: 'طبيعة خضراء', icon: '🌿' },
   { id: 'yellow-sun', class: 'bg-gradient-to-b from-amber-50 to-yellow-100', label: 'شمس مشرقة', icon: '☀️' },
-  { id: 'night-stars', class: 'bg-gradient-to-b from-slate-900 to-indigo-950', label: 'ليل نجوم', icon: '🌙' },
+  { id: 'night-stars', class: 'bg-gradient-to-b from-slate-900 to-pink-900', label: 'ليل نجوم', icon: '🌙' },
   { id: 'candy', class: 'bg-gradient-to-b from-rose-100 to-fuchsia-200', label: 'حلوى', icon: '🍬' },
   { id: 'ocean', class: 'bg-gradient-to-b from-cyan-100 to-blue-300', label: 'محيط', icon: '🌊' },
 ];
@@ -187,6 +187,8 @@ function Doll({ avatar, isDancing = false, size = 'md' }: { avatar: AvatarConfig
     </motion.div>
   );
 }
+
+const REACTION_EMOJIS = ['❤️', '😍', '👏', '⭐'] as const;
 
 /* ─── MAIN COMPONENT ─────────────────────────────────────── */
 export default function HeroHouse() {
@@ -237,9 +239,19 @@ export default function HeroHouse() {
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
   const [inviteSending, setInviteSending] = useState(false);
 
+  /* — photo sharing — */
+  const [isCapturing, setIsCapturing] = useState(false);
+
+  /* — sound mute — */
+  const [isMuted, setIsMuted] = useState<boolean>(() => {
+    try { return localStorage.getItem('sound_muted') === 'true'; } catch { return false; }
+  });
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingSave = useRef<Record<string, unknown>>({});
   const saveTimer = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedAvatarRef = useRef<string>('');
+  const bgMusicRef = useRef<HTMLAudioElement | null>(null);
 
   /* ─── UNIFIED DEBOUNCED SAVE (2 seconds) ─────────────────── */
   const queueSave = (hostUid: string, fields: Record<string, unknown>) => {
@@ -318,6 +330,9 @@ export default function HeroHouse() {
         [`houseConfig.liveSession.visitors.${activeChild.uid}`]: visitor,
         'houseConfig.liveSession.updatedAt': Date.now()
       }).catch(() => {});
+      import('../lib/badgeUtils').then(({ awardBadgeIfNotEarned, BADGE_IDS }) => {
+        awardBadgeIfNotEarned(activeChild.uid, BADGE_IDS.FRIENDSHIP).catch(() => {});
+      });
     }
 
     /* Subscribe to host's profile for live session updates */
@@ -386,6 +401,7 @@ export default function HeroHouse() {
     const currentChild = JSON.parse(activeChildStr) as ChildProfile;
     setActiveChild(currentChild);
     setPreviewAvatar(currentChild.avatar);
+    lastSavedAvatarRef.current = JSON.stringify(currentChild.avatar);
 
     if (!visitId) return;
 
@@ -453,6 +469,7 @@ export default function HeroHouse() {
 
   /* ─── HELPERS ────────────────────────────────────────────── */
   const playSound = (type: 'knock' | 'magic' | 'pop' | 'ding' | 'celebrate' | 'wardrobe') => {
+    if (isMuted) return;
     const sounds = {
       knock:     'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
       magic:     'https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3',
@@ -462,6 +479,67 @@ export default function HeroHouse() {
       wardrobe:  'https://assets.mixkit.co/active_storage/sfx/2022/2022-preview.mp3'
     };
     new Audio(sounds[type]).play().catch(() => {});
+  };
+
+  const toggleMute = () => {
+    setIsMuted(prev => {
+      const next = !prev;
+      try { localStorage.setItem('sound_muted', String(next)); } catch {}
+      return next;
+    });
+  };
+
+  /* ─── BACKGROUND AMBIENT MUSIC ───────────────────────────── */
+  useEffect(() => {
+    const audio = new Audio('https://assets.mixkit.co/music/preview/mixkit-little-fairy-tale-939.mp3');
+    audio.loop = true;
+    audio.volume = 0.18;
+    bgMusicRef.current = audio;
+    if (!isMuted) {
+      audio.play().catch(() => {});
+    }
+    return () => {
+      audio.pause();
+      audio.src = '';
+      bgMusicRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const audio = bgMusicRef.current;
+    if (!audio) return;
+    if (isMuted) {
+      audio.pause();
+    } else {
+      audio.play().catch(() => {});
+    }
+  }, [isMuted]);
+
+  /* ─── AWARD STARS HELPER ─────────────────────────────────── */
+  const awardStars = async (uid: string, amount: number, message: string, extraFields?: Record<string, unknown>) => {
+    try {
+      await updateDoc(doc(db, 'children_profiles', uid), {
+        points: increment(amount),
+        stars: increment(amount),
+        ...extraFields
+      });
+      const stored = localStorage.getItem('active_child');
+      if (stored) {
+        const parsed = JSON.parse(stored) as ChildProfile;
+        if (parsed.uid === uid) {
+          parsed.points = (parsed.points || 0) + amount;
+          parsed.stars = (parsed.stars || 0) + amount;
+          localStorage.setItem('active_child', JSON.stringify(parsed));
+        }
+      }
+      toast.success(message, {
+        duration: 4000,
+        style: { background: '#fef9c3', color: '#78350f', fontWeight: 'bold', fontSize: '1rem', borderRadius: '1rem' }
+      });
+      playSound('celebrate');
+    } catch (err) {
+      console.error('Failed to award stars:', err);
+    }
   };
 
   /* ─── ROOM helpers (typed, no `any`) ───────────────────────── */
@@ -495,10 +573,25 @@ export default function HeroHouse() {
       x: 30 + Math.random() * 40, y: 40 + Math.random() * 30,
       scale: 1.2, rotation: 0
     };
-    const newFurniture = [...getCurrentRoomFurniture(), newItem];
+    const prevFurniture = getCurrentRoomFurniture();
+    const prevCount = prevFurniture.length;
+    const newFurniture = [...prevFurniture, newItem];
+    const newCount = newFurniture.length;
     updateLocalFurniture(activeRoom, newFurniture);
     queueSave(hostProfile.uid, { [`houseConfig.rooms.${activeRoom}.furniture`]: newFurniture });
     playSound('pop');
+    const roomRewards = hostProfile.houseConfig?.roomRewards ?? {};
+    const firstKey = `${activeRoom}_first`;
+    const completeKey = `${activeRoom}_complete`;
+    if (prevCount === 0 && !roomRewards[firstKey]) {
+      awardStars(hostProfile.uid, 5, `⭐ رائع! كسبتِ 5 نجوم لتزيين ${ROOMS[activeRoom].label} لأول مرة!`, {
+        [`houseConfig.roomRewards.${firstKey}`]: true
+      });
+    } else if (prevCount < 4 && newCount >= 4 && !roomRewards[completeKey]) {
+      awardStars(hostProfile.uid, 10, `🎉 أحسنتِ! أكملتِ تصميم ${ROOMS[activeRoom].label}! كسبتِ 10 نجوم!`, {
+        [`houseConfig.roomRewards.${completeKey}`]: true
+      });
+    }
   };
 
   const handleUpdateItem = (itemId: string, updates: Partial<HouseItem>) => {
@@ -540,6 +633,9 @@ export default function HeroHouse() {
 
   const handleSaveOutfit = async () => {
     if (!activeChild || !previewAvatar) return;
+    /* detect a real appearance change by comparing against the last persisted avatar */
+    const previewStr = JSON.stringify(previewAvatar);
+    const avatarChanged = previewStr !== lastSavedAvatarRef.current;
     /* flush any pending wardrobe (and house) changes immediately */
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const snapshot = { ...pendingSave.current, avatar: previewAvatar };
@@ -559,6 +655,10 @@ export default function HeroHouse() {
       toast.success('تم حفظ المظهر الجديد! ✨');
       playSound('magic');
       setShowWardrobe(false);
+      if (avatarChanged) {
+        lastSavedAvatarRef.current = previewStr;
+        await awardStars(activeChild.uid, 15, '👗 مظهركِ يبهر الجميع! كسبتِ 15 نجمة!');
+      }
     } catch { toast.error('خطأ في حفظ المظهر'); }
     finally { setIsSaving(false); }
   };
@@ -698,8 +798,8 @@ export default function HeroHouse() {
     setIsMagicDecorating(true);
     try {
       const ai = new GoogleGenAI({ apiKey });
-      const prompt = `You are a magical interior designer for a children's app. The hero is "${hostProfile.heroName || hostProfile.name}". Suggest a fun magical room. Return ONLY JSON: { "wallpaper": "bg-gradient-to-b from-purple-200 to-pink-100", "floor": "bg-amber-100", "furniture": [{ "type": "bed", "emoji": "🛏️", "x": 20, "y": 70, "scale": 2, "rotation": 0 }, { "type": "plant", "emoji": "🪴", "x": 10, "y": 60, "scale": 1, "rotation": 0 }] }`;
-      const response = await ai.models.generateContent({ model: 'gemini-2.0-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
+      const prompt = `You are a magical interior designer for a children's app. The hero is "${hostProfile.heroName || hostProfile.name}". Suggest a fun magical room. Return ONLY JSON: { "wallpaper": "bg-gradient-to-b from-pink-200 to-pink-100", "floor": "bg-amber-100", "furniture": [{ "type": "bed", "emoji": "🛏️", "x": 20, "y": 70, "scale": 2, "rotation": 0 }, { "type": "plant", "emoji": "🪴", "x": 10, "y": 60, "scale": 1, "rotation": 0 }] }`;
+      const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { responseMimeType: 'application/json' } });
       const result = JSON.parse(response.text ?? '{}') as Partial<MagicDecorateResult>;
       if (result.wallpaper && Array.isArray(result.furniture)) {
         const newFurniture: HouseItem[] = result.furniture.map((f) => ({
@@ -717,6 +817,30 @@ export default function HeroHouse() {
   };
 
   /* ─── CHAT ───────────────────────────────────────────────── */
+  const handleReaction = async (msgId: string, emoji: string) => {
+    if (!activeChild || !msgId) return;
+    const uid = activeChild.uid;
+    const msgRef = doc(db, 'chat_messages', msgId);
+    try {
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(msgRef);
+        if (!snap.exists()) return;
+        const data = snap.data() as HouseMessage;
+        const reactions: Record<string, string[]> = { ...(data.reactions ?? {}) };
+        const current = reactions[emoji] ?? [];
+        if (current.includes(uid)) {
+          reactions[emoji] = current.filter(u => u !== uid);
+          if (reactions[emoji].length === 0) delete reactions[emoji];
+        } else {
+          reactions[emoji] = [...current, uid];
+        }
+        tx.update(msgRef, { reactions });
+      });
+    } catch {
+      toast.error('تعذّر إضافة التفاعل، حاولي مجدداً');
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !activeChild || !hostProfile) return;
@@ -801,10 +925,59 @@ export default function HeroHouse() {
     navigate('/child');
   };
 
+  /* ─── CAPTURE & SHARE PHOTO ──────────────────────────────── */
+  const handleCaptureAndShare = async () => {
+    if (!hostProfile || !activeChild || isCapturing) return;
+    setIsCapturing(true);
+    playSound('magic');
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+
+      const roomEl = document.getElementById('hero-house-main');
+      if (!roomEl) { toast.error('تعذّر التقاط الصورة'); return; }
+
+      const canvas = await html2canvas(roomEl, {
+        useCORS: true,
+        allowTaint: true,
+        scale: 0.75,
+        backgroundColor: '#1e293b',
+        ignoreElements: (el) => el.classList.contains('no-capture')
+      });
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('blob failed')), 'image/png');
+      });
+
+      const storageRef = ref(storage, `house-photos/${hostProfile.uid}/${Date.now()}.png`);
+      await uploadBytes(storageRef, blob, { contentType: 'image/png' });
+      const url = await getDownloadURL(storageRef);
+
+      const msg = {
+        houseId: hostProfile.uid,
+        senderId: activeChild.uid,
+        senderName: activeChild.heroName || activeChild.name,
+        senderHeroName: activeChild.heroName || activeChild.name,
+        senderAvatar: activeChild.avatar || null,
+        text: '📸 شاركت صورة بيتها!',
+        imageUrl: url,
+        timestamp: Date.now()
+      };
+      await addDoc(collection(db, 'chat_messages'), msg);
+      toast.success('تمت مشاركة صورة البيت مع الصديقات! 📸✨');
+      setShowChat(true);
+    } catch (err) {
+      console.error('Capture error:', err);
+      toast.error('عذراً، تعذّرت مشاركة الصورة');
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
   /* ─── LOADING ────────────────────────────────────────────── */
   if (loading || !visit || !hostProfile) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-fuchsia-950 to-indigo-950 flex items-center justify-center" dir="rtl">
+      <div className="min-h-screen bg-gradient-to-br from-rose-900 to-pink-800 flex items-center justify-center" dir="rtl">
         <div className="flex flex-col items-center gap-4">
           <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }} className="text-6xl">🏠</motion.div>
           <p className="text-white font-black text-xl">جارٍ تحميل البيت...</p>
@@ -828,7 +1001,7 @@ export default function HeroHouse() {
 
   /* ─── RENDER ─────────────────────────────────────────────── */
   return (
-    <div className="fixed inset-0 bg-slate-900 font-sans overflow-hidden" dir="rtl">
+    <div id="hero-house-main" className="fixed inset-0 bg-slate-900 font-sans overflow-hidden" dir="rtl">
 
       {/* ── ROOM BACKGROUND ── */}
       <div className={`absolute inset-0 ${currentWall} transition-all duration-700`} />
@@ -838,7 +1011,7 @@ export default function HeroHouse() {
       <AnimatePresence>
         {isMagicDecorating && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-purple-500/30 backdrop-blur-md flex flex-col items-center justify-center pointer-events-none">
+            className="fixed inset-0 z-[100] bg-fuchsia-400/30 backdrop-blur-md flex flex-col items-center justify-center pointer-events-none">
             <motion.div animate={{ scale: [1,1.5,1], rotate: [0,360], filter: ['hue-rotate(0deg)','hue-rotate(360deg)'] }}
               transition={{ duration: 2, repeat: Infinity }} className="text-9xl mb-8">🪄</motion.div>
             <motion.h2 animate={{ opacity: [0.5,1,0.5] }} transition={{ duration: 1.5, repeat: Infinity }}
@@ -989,7 +1162,7 @@ export default function HeroHouse() {
       </div>
 
       {/* ── TOP HEADER ── */}
-      <div className="absolute top-4 left-4 right-4 z-50 flex justify-between items-start pointer-events-none">
+      <div className="no-capture absolute top-4 left-4 right-4 z-50 flex justify-between items-start pointer-events-none">
         {/* Left: back + host info */}
         <div className="flex flex-col gap-3 pointer-events-auto">
           <div className="flex gap-2">
@@ -1038,6 +1211,27 @@ export default function HeroHouse() {
                 <Wand2 className="w-5 h-5" />
               </button>
             )}
+            {/* Share house photo button (host only) */}
+            {isHost && (
+              <button
+                onClick={handleCaptureAndShare}
+                disabled={isCapturing}
+                title="التقطي صورة البيت وشاركيها"
+                className={`no-capture w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all ${isCapturing ? 'bg-emerald-400 text-white animate-pulse' : 'bg-white/90 text-emerald-500 hover:bg-emerald-50'}`}
+              >
+                {isCapturing
+                  ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full" />
+                  : <Share2 className="w-5 h-5" />
+                }
+              </button>
+            )}
+            {/* Mute/unmute all sound effects — visible to all */}
+            <button onClick={toggleMute}
+              title={isMuted ? 'تشغيل الأصوات' : 'كتم الأصوات'}
+              className={`w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all ${isMuted ? 'bg-slate-400 text-white' : 'bg-white/90 text-slate-500 hover:bg-slate-100'}`}>
+              {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+            </button>
+
             {/* Music toggle: visible to all, setup is host-only */}
             {(() => {
               const hasBgMusic = !!extractYoutubeId(hostProfile?.houseConfig?.bgMusic || '');
@@ -1045,14 +1239,14 @@ export default function HeroHouse() {
                 <div className="flex gap-1">
                   {hasBgMusic && (
                     <button onClick={() => setMusicPlaying(p => !p)}
-                      className={`w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all ${musicPlaying ? 'bg-purple-500 text-white' : 'bg-white/90 text-purple-500'}`}
+                      className={`w-12 h-12 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl border-3 border-white transition-all ${musicPlaying ? 'bg-fuchsia-400 text-white' : 'bg-white/90 text-fuchsia-500'}`}
                       title={musicPlaying ? 'كتم الموسيقى' : 'تشغيل الموسيقى'}>
                       {musicPlaying ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
                     </button>
                   )}
                   {isHost && (
                     <button onClick={() => { setMusicUrlInput(hostProfile?.houseConfig?.bgMusic || ''); setShowMusicSetup(true); }}
-                      className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-purple-500 hover:bg-purple-50 shadow-xl border-3 border-white">
+                      className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-fuchsia-500 hover:bg-pink-50 shadow-xl border-3 border-white">
                       <Music2 className="w-5 h-5" />
                     </button>
                   )}
@@ -1083,7 +1277,7 @@ export default function HeroHouse() {
         {/* Right: action buttons */}
         <div className="flex flex-col gap-3 items-end pointer-events-auto">
           {visitId !== 'self' && (
-            <button onClick={() => handleAction('mirror')} className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-purple-500 shadow-xl border-3 border-white hover:scale-105 transition-transform">
+            <button onClick={() => handleAction('mirror')} className="w-12 h-12 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center text-fuchsia-500 shadow-xl border-3 border-white hover:scale-105 transition-transform">
               <Camera className="w-5 h-5" />
             </button>
           )}
@@ -1123,7 +1317,7 @@ export default function HeroHouse() {
       </div>
 
       {/* ── ROOM SELECTOR (bottom left) ── */}
-      <div className="absolute bottom-[140px] right-4 z-50 flex flex-col gap-2">
+      <div className="no-capture absolute bottom-[140px] right-4 z-50 flex flex-col gap-2">
         {(Object.entries(ROOMS) as [RoomId, typeof ROOMS[RoomId]][]).map(([id, room]) => (
           <motion.button key={id} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
             onClick={() => { setActiveRoom(id); playSound('ding'); }}
@@ -1326,7 +1520,7 @@ export default function HeroHouse() {
       </AnimatePresence>
 
       {/* ── GROUP CHAT WIDGET ── */}
-      <div className="absolute bottom-4 left-4 z-50 w-72 pointer-events-auto">
+      <div className="no-capture absolute bottom-4 left-4 z-50 w-72 pointer-events-auto">
         <AnimatePresence>
           {showChat && (
             <motion.div initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.9 }}
@@ -1358,11 +1552,36 @@ export default function HeroHouse() {
                 )}
                 {houseMessages.map(msg => {
                   const isMe = msg.senderId === activeChild?.uid;
+                  const reactions = msg.reactions ?? {};
+                  const hasReactions = Object.keys(reactions).some(e => (reactions[e]?.length ?? 0) > 0);
                   return (
                     <div key={msg.id} className={`flex flex-col ${isMe ? 'items-start' : 'items-end'}`}>
                       <span className="text-[9px] font-bold text-slate-400 mb-0.5 px-2">{msg.senderHeroName}</span>
                       <div className={`px-3 py-2 rounded-2xl max-w-[90%] font-bold text-sm shadow-sm ${isMe ? 'bg-sky-500 text-white rounded-tr-sm' : 'bg-fuchsia-100 text-fuchsia-800 rounded-tl-sm'}`}>
                         {msg.text}
+                        {msg.imageUrl && (
+                          <a href={msg.imageUrl} target="_blank" rel="noopener noreferrer" className="block mt-2">
+                            <img src={msg.imageUrl} alt="صورة البيت" className="rounded-xl max-w-[180px] border-2 border-white/30 shadow-md hover:opacity-90 transition-opacity cursor-pointer" />
+                          </a>
+                        )}
+                      </div>
+                      {/* Reaction strip */}
+                      <div className={`flex items-center gap-1 mt-1 px-1 flex-wrap ${isMe ? '' : 'justify-end'}`}>
+                        {hasReactions && Object.entries(reactions).map(([emoji, uids]) =>
+                          (uids?.length ?? 0) > 0 ? (
+                            <button key={emoji} onClick={() => msg.id && handleReaction(msg.id, emoji)}
+                              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[11px] font-black border transition-all ${uids.includes(activeChild?.uid ?? '') ? 'bg-fuchsia-100 border-fuchsia-300 text-fuchsia-700' : 'bg-white border-slate-200 text-slate-600 hover:border-fuchsia-300'}`}>
+                              <span>{emoji}</span>
+                              <span className="text-[10px]">{uids.length}</span>
+                            </button>
+                          ) : null
+                        )}
+                        {REACTION_EMOJIS.map(emoji => (
+                          <button key={emoji} onClick={() => msg.id && handleReaction(msg.id, emoji)}
+                            className="text-[13px] opacity-30 hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-fuchsia-50">
+                            {emoji}
+                          </button>
+                        ))}
                       </div>
                     </div>
                   );
@@ -1461,7 +1680,7 @@ export default function HeroHouse() {
 
       {/* ── GAME WIDGET ── */}
       {visitId !== 'self' && (
-        <div className="absolute bottom-4 right-[140px] sm:right-[170px] z-50 w-72 pointer-events-auto flex flex-col justify-end items-end">
+        <div className="no-capture absolute bottom-4 right-[140px] sm:right-[170px] z-50 w-72 pointer-events-auto flex flex-col justify-end items-end">
           <AnimatePresence>
             {visit?.gameState?.type === 'tictactoe' && (
               <motion.div initial={{ opacity: 0, scale: 0.8, y: 50 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8, y: 50 }}
@@ -1572,7 +1791,7 @@ export default function HeroHouse() {
 
       {/* ── ACTION BAR (bottom center) + toggle ── */}
       {!isEditing && !showWardrobe && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto flex flex-col items-center gap-2">
+        <div className="no-capture absolute bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto flex flex-col items-center gap-2">
           {/* Toggle pill */}
           <button
             onClick={() => setShowActionBar(p => !p)}
@@ -1689,9 +1908,9 @@ export default function HeroHouse() {
             onClick={() => setShowMusicSetup(false)}>
             <motion.div initial={{ scale: 0.85, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.85, y: 30 }}
               onClick={e => e.stopPropagation()}
-              className="bg-white rounded-[2rem] shadow-2xl border-4 border-purple-100 w-full max-w-md p-5 flex flex-col gap-4" dir="rtl">
+              className="bg-white rounded-[2rem] shadow-2xl border-4 border-fuchsia-100 w-full max-w-md p-5 flex flex-col gap-4" dir="rtl">
               <div className="flex justify-between items-center">
-                <h2 className="text-lg font-black text-purple-600 flex items-center gap-2">
+                <h2 className="text-lg font-black text-fuchsia-600 flex items-center gap-2">
                   <Music2 className="w-5 h-5" /> موسيقى البيت
                 </h2>
                 <button onClick={() => setShowMusicSetup(false)} className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-full"><X className="w-4 h-4" /></button>
@@ -1704,7 +1923,7 @@ export default function HeroHouse() {
                     value={musicUrlInput}
                     onChange={e => setMusicUrlInput(e.target.value)}
                     placeholder="https://youtube.com/watch?v=..."
-                    className="flex-1 border-2 border-slate-200 rounded-xl px-3 py-2 text-sm text-right focus:border-purple-400 outline-none"
+                    className="flex-1 border-2 border-slate-200 rounded-xl px-3 py-2 text-sm text-right focus:border-fuchsia-400 outline-none"
                   />
                   <motion.button
                     whileTap={{ scale: 0.95 }}
@@ -1717,13 +1936,13 @@ export default function HeroHouse() {
                       toast.success(id ? 'تم تحديث موسيقى البيت! 🎵' : 'تم إيقاف الموسيقى');
                       setShowMusicSetup(false);
                     }}
-                    className="bg-purple-500 hover:bg-purple-600 text-white font-black text-xs px-4 py-2 rounded-xl">
+                    className="bg-fuchsia-400 hover:bg-fuchsia-500 text-white font-black text-xs px-4 py-2 rounded-xl">
                     حفظ
                   </motion.button>
                 </div>
               </div>
               {hostProfile?.houseConfig?.bgMusic && (
-                <div className="flex items-center gap-2 bg-purple-50 rounded-xl px-3 py-2 text-xs text-purple-600 font-bold">
+                <div className="flex items-center gap-2 bg-pink-50 rounded-xl px-3 py-2 text-xs text-fuchsia-600 font-bold">
                   <Music2 className="w-3.5 h-3.5" /> موسيقى حالية: {hostProfile.houseConfig.bgMusic.slice(0, 40)}...
                 </div>
               )}

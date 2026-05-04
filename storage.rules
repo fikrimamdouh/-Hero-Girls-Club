@@ -1,0 +1,34 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // House photos — uploaded by the owner during a HeroHouse session.
+    // Read:  require Firebase Auth (blocks unauthenticated public access).
+    // Write: require Firebase Auth AND the requester's UID must equal
+    //        the hostUid path segment (owner-only upload).
+    //
+    // TODO: add friend-specific read checks once children are migrated from
+    // PIN login to Firebase Auth. Friend-scoped storage rules require
+    // request.auth to be non-null and firestore.get() to access friendship
+    // data in the default database — neither is available in PIN-only sessions.
+    match /house-photos/{hostUid}/{fileName} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == hostUid;
+    }
+
+    // Chat media — uploaded by children (may use PIN-only sessions without
+    // Firebase Auth). Preserve existing open access so child sessions are
+    // not broken by introducing this rules file.
+    match /chat_images/{fileName} {
+      allow read, write: if true;
+    }
+
+    match /chat_voice/{fileName} {
+      allow read, write: if true;
+    }
+
+    match /group_images/{fileName} {
+      allow read, write: if true;
+    }
+  }
+}

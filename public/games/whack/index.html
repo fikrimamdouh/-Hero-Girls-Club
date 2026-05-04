@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whack-A-Mole</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        /* General Body Styling */
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #8e44ad, #3498db); /* Purple to Blue gradient */
+            font-family: 'Press Start 2P', cursive; /* Retro game font */
+            color: #ecf0f1; /* Light text color */
+            overflow: hidden; /* Prevent scrollbars */
+            padding: 20px; /* Add some padding around the content */
+            box-sizing: border-box; /* Include padding in element's total width and height */
+        }
+
+        /* Game Container */
+        .game-container {
+            background-color: rgba(0, 0, 0, 0.6); /* Semi-transparent dark background */
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); /* Stronger shadow */
+            text-align: center;
+            border: 5px solid #f1c40f; /* Yellow border */
+            max-width: 90%; /* Max width for responsiveness */
+            width: 600px; /* Base width */
+            box-sizing: border-box;
+            position: relative;
+            z-index: 1; /* Ensure it's above background effects */
+        }
+
+        /* Game Title */
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            color: #f1c40f; /* Yellow title */
+            text-shadow: 3px 3px 0 #c0392b; /* Red shadow */
+            animation: pulse 2s infinite alternate; /* Pulsing effect */
+        }
+
+        /* Score and Time Display */
+        .score-time {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 15px; /* Reduced margin */
+            font-size: 1.2em;
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 10px 20px;
+            border-radius: 10px;
+            border: 2px solid #2ecc71; /* Green border */
+        }
+
+        .score-time div {
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+
+        /* Mole Reaction Display */
+        #mole-reaction-display {
+            min-height: 2em; /* Ensure space even when empty */
+            font-size: 0.9em;
+            color: #a2d2ff; /* Lighter blue for reactions */
+            margin-bottom: 15px;
+            opacity: 0;
+            transition: opacity 0.5s ease-out;
+            text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+        }
+
+        #mole-reaction-display.show {
+            opacity: 1;
+        }
+
+
+        /* Game Board Grid */
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr); /* 3 columns */
+            grid-template-rows: repeat(3, 1fr); /* 3 rows */
+            gap: 15px; /* Spacing between holes */
+            width: 100%;
+            max-width: 450px; /* Max width for the board */
+            margin: 0 auto 30px auto;
+            background-color: #7f8c8d; /* Grey background for the board */
+            padding: 20px;
+            border-radius: 15px;
+            border: 3px solid #95a5a6; /* Darker grey border */
+            box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Individual Hole */
+        .hole {
+            width: 100%;
+            padding-bottom: 100%; /* Makes the hole square */
+            position: relative;
+            background-color: #34495e; /* Dark blue-grey for holes */
+            border-radius: 50%; /* Circular holes */
+            overflow: hidden;
+            border: 4px solid #2c3e50; /* Even darker border */
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+            cursor: pointer; /* Indicate clickable */
+            transition: transform 0.1s ease-out; /* Smooth transition for click feedback */
+        }
+
+        .hole:active {
+            transform: scale(0.95); /* Shrink slightly on click */
+        }
+
+        /* Mole Styling */
+        .mole {
+            position: absolute;
+            top: 100%; /* Start below the hole */
+            left: 50%;
+            transform: translate(-50%, 0);
+            width: 90%;
+            height: 90%;
+            background-color: #e74c3c; /* Red color for mole */
+            border-radius: 50%;
+            transition: top 0.2s ease-out; /* Smooth pop-up animation */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3em; /* Larger emoji */
+            line-height: 1;
+            user-select: none; /* Prevent text selection */
+            pointer-events: none; /* Mole itself is not clickable, only the hole */
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+        }
+
+        .mole.up {
+            top: 5%; /* Pop up to visible position */
+        }
+
+        /* Game Controls */
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+        }
+
+        /* Buttons */
+        button {
+            background: linear-gradient(180deg, #2ecc71, #27ae60); /* Green gradient */
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 1em;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            transition: all 0.2s ease-in-out;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            outline: none; /* Remove outline on focus */
+        }
+
+        button:hover {
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+            background: linear-gradient(180deg, #27ae60, #2ecc71); /* Invert gradient on hover */
+        }
+
+        button:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        button:disabled {
+            background: #95a5a6; /* Grey when disabled */
+            cursor: not-allowed;
+            opacity: 0.7;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Specific button colors */
+        #start-button {
+            background: linear-gradient(180deg, #f39c12, #e67e22); /* Orange gradient */
+        }
+        #start-button:hover {
+            background: linear-gradient(180deg, #e67e22, #f39c12);
+        }
+
+        #reset-button {
+            background: linear-gradient(180deg, #e74c3c, #c0392b); /* Red gradient */
+        }
+        #reset-button:hover {
+            background: linear-gradient(180deg, #c0392b, #e74c3c);
+        }
+
+        #fact-button, #strategy-button { /* Apply to both fact and strategy buttons */
+            background: linear-gradient(180deg, #3498db, #2980b9); /* Blue gradient */
+        }
+        #fact-button:hover, #strategy-button:hover {
+            background: linear-gradient(180deg, #2980b9, #3498db);
+        }
+
+        /* Message Box for Game Over */
+        .message-box {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+
+        .message-box.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .message-content {
+            background-color: #34495e; /* Dark blue-grey */
+            color: #ecf0f1;
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            border: 4px solid #f1c40f; /* Yellow border */
+            max-width: 90%;
+            transform: scale(0.8);
+            transition: transform 0.3s ease;
+        }
+
+        .message-box.show .message-content {
+            transform: scale(1);
+        }
+
+        .message-content h2 {
+            font-size: 2.2em;
+            margin-bottom: 15px;
+            color: #2ecc71; /* Green for success */
+            text-shadow: 2px 2px 0 #27ae60;
+        }
+
+        .message-content p {
+            font-size: 1.3em;
+            margin-bottom: 25px;
+            line-height: 1.4;
+        }
+
+        .message-content button {
+            background: linear-gradient(180deg, #f39c12, #e67e22); /* Orange gradient */
+            padding: 12px 25px;
+            font-size: 0.9em;
+        }
+        .message-content button:hover {
+            background: linear-gradient(180deg, #e67e22, #f39c12);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.8em;
+            }
+            .score-time {
+                font-size: 1em;
+                flex-direction: column;
+                gap: 10px;
+            }
+            #mole-reaction-display {
+                font-size: 0.8em;
+            }
+            .game-board {
+                grid-template-columns: repeat(2, 1fr); /* 2 columns on small screens */
+                grid-template-rows: repeat(auto, 1fr);
+                max-width: 300px;
+            }
+            .mole {
+                font-size: 2.5em;
+            }
+            .controls {
+                flex-direction: column;
+                gap: 15px;
+            }
+            button {
+                width: 100%;
+                padding: 12px 20px;
+            }
+            .message-content h2 {
+                font-size: 1.8em;
+            }
+            .message-content p {
+                font-size: 1em;
+            }
+        }
+
+        /* Background animation for extra flair */
+        .background-shapes {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: 0;
+        }
+
+        .shape {
+            position: absolute;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            animation: float 15s infinite ease-in-out alternate;
+        }
+
+        .shape:nth-child(1) { width: 80px; height: 80px; top: 10%; left: 5%; animation-delay: 0s; }
+        .shape:nth-child(2) { width: 120px; height: 120px; top: 30%; left: 80%; animation-delay: 2s; }
+        .shape:nth-child(3) { width: 60px; height: 60px; top: 70%; left: 20%; animation-delay: 4s; }
+        .shape:nth-child(4) { width: 100px; height: 100px; top: 50%; left: 50%; animation-delay: 6s; }
+        .shape:nth-child(5) { width: 70px; height: 70px; top: 85%; left: 90%; animation-delay: 8s; }
+        .shape:nth-child(6) { width: 90px; height: 90px; top: 5%; left: 70%; animation-delay: 10s; }
+
+        @keyframes float {
+            0% { transform: translateY(0) rotate(0deg); opacity: 0.1; }
+            50% { transform: translateY(-20px) rotate(10deg); opacity: 0.2; }
+            100% { transform: translateY(0) rotate(0deg); opacity: 0.1; }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            100% { transform: scale(1.05); }
+        }
+
+        /* Loading Spinner for API calls */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #f1c40f;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="background-shapes">
+        <div class="shape"></div>
+        <div class="shape"></div>
+        <div class="shape"></div>
+        <div class="shape"></div>
+        <div class="shape"></div>
+        <div class="shape"></div>
+    </div>
+
+    <div class="game-container">
+        <h1>Whack-A-Mole!</h1>
+        <div class="score-time">
+            <div>Score: <span id="score">0</span></div>
+            <div>Time: <span id="time">30</span>s</div>
+        </div>
+        <div id="mole-reaction-display"></div> <div class="game-board" id="game-board">
+            </div>
+        <div class="controls">
+            <button id="start-button">ابدأي اللعبة</button>
+            <button id="reset-button" disabled>Reset Game</button>
+            <button id="fact-button">✨ Get Game Fact ✨</button>
+            <button id="strategy-button">✨ Get Strategy Tip ✨</button> </div>
+    </div>
+
+    <div class="message-box" id="message-box">
+        <div class="message-content">
+            <h2 id="message-title">Game Over!</h2>
+            <p id="message-text">Your final score is: 0</p>
+            <button id="play-again-button">العب مرة أخرى</button>
+            <button id="close-message-button" style="background: linear-gradient(180deg, #7f8c8d, #6c7a89); margin-top: 10px;">Close</button>
+        </div>
+    </div>
+
+    <script>
+        const gameBoard = document.getElementById('game-board');
+        const scoreDisplay = document.getElementById('score');
+        const timeDisplay = document.getElementById('time');
+        const startButton = document.getElementById('start-button');
+        const resetButton = document.getElementById('reset-button');
+        const factButton = document.getElementById('fact-button');
+        const strategyButton = document.getElementById('strategy-button'); // New strategy button
+        const messageBox = document.getElementById('message-box');
+        const messageTitle = document.getElementById('message-title');
+        const messageText = document.getElementById('message-text');
+        const playAgainButton = document.getElementById('play-again-button');
+        const closeMessageButton = document.getElementById('close-message-button');
+        const moleReactionDisplay = document.getElementById('mole-reaction-display'); // New: Mole reaction display
+
+        let score = 0;
+        let time = 30;
+        let gameInterval;
+        let moleTimeout;
+        let lastHole;
+        let isGameRunning = false;
+        let isFetchingLLM = false; // To prevent multiple API calls
+
+        // Array of mole emojis
+        const moleEmojis = ['🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁'];
+
+        // Function to create holes dynamically
+        function createHoles() {
+            gameBoard.innerHTML = ''; // Clear existing holes
+            for (let i = 0; i < 9; i++) {
+                const hole = document.createElement('div');
+                hole.classList.add('hole');
+                hole.dataset.index = i; // Add a data attribute for index
+                hole.addEventListener('click', whack); // Add click listener
+                gameBoard.appendChild(hole);
+            }
+        }
+
+        // Function to get a random time for mole appearance
+        function randomTime(min, max) {
+            return Math.round(Math.random() * (max - min) + min);
+        }
+
+        // Function to pick a random hole
+        function randomHole(holes) {
+            const idx = Math.floor(Math.random() * holes.length);
+            const hole = holes[idx];
+            if (hole === lastHole) {
+                return randomHole(holes); // Prevent mole from appearing in the same hole twice in a row
+            }
+            lastHole = hole;
+            return hole;
+        }
+
+        // Function to make a mole pop up
+        function popUpMole() {
+            if (!isGameRunning) return; // Stop if game is not running
+
+            const holes = document.querySelectorAll('.hole');
+            const hole = randomHole(Array.from(holes)); // Convert NodeList to Array
+
+            // Create mole element
+            const mole = document.createElement('div');
+            mole.classList.add('mole');
+            const currentMoleEmoji = moleEmojis[Math.floor(Math.random() * moleEmojis.length)];
+            mole.textContent = currentMoleEmoji; // Random emoji
+            hole.appendChild(mole);
+
+            mole.classList.add('up'); // Make mole visible
+
+            const timeUp = randomTime(500, 1500); // Mole stays up for 0.5 to 1.5 seconds
+
+            moleTimeout = setTimeout(() => {
+                mole.classList.remove('up'); // Hide mole
+                hole.removeChild(mole); // Remove mole element
+                if (isGameRunning) {
+                    popUpMole(); // Pop up another mole if game is still running
+                }
+            }, timeUp);
+        }
+
+        // Function to handle whack (click)
+        function whack(event) {
+            if (!isGameRunning) return; // Only allow whacking if game is running
+            if (!event.target.classList.contains('hole')) return; // Ensure click is on the hole
+
+            const hole = event.target;
+            const mole = hole.querySelector('.mole');
+
+            if (mole && mole.classList.contains('up')) {
+                score++;
+                scoreDisplay.textContent = score;
+                const whackedMoleEmoji = mole.textContent; // Get the emoji of the whacked mole
+                mole.classList.remove('up'); // Hide mole immediately
+                clearTimeout(moleTimeout); // Clear the current mole's timeout
+
+                // Display mole reaction
+                displayMoleReaction(whackedMoleEmoji);
+
+                // Remove the mole element after a short delay to allow transition to finish
+                setTimeout(() => {
+                    if (hole.contains(mole)) { // Check if mole is still a child before removing
+                        hole.removeChild(mole);
+                    }
+                    if (isGameRunning) {
+                        popUpMole(); // Pop up a new mole right away
+                    }
+                }, 200); // Match mole transition time
+            }
+        }
+
+        // Function to start the game
+        function startGame() {
+            score = 0;
+            time = 30;
+            scoreDisplay.textContent = score;
+            timeDisplay.textContent = time;
+            isGameRunning = true;
+            startButton.disabled = true;
+            resetButton.disabled = false;
+            factButton.disabled = true; // Disable fact button during game
+            strategyButton.disabled = true; // Disable strategy button during game
+            messageBox.classList.remove('show'); // Hide message box
+            moleReactionDisplay.classList.remove('show'); // Hide any lingering reaction
+
+            createHoles(); // Ensure holes are created before starting
+
+            popUpMole(); // Start moles popping up
+
+            gameInterval = setInterval(() => {
+                time--;
+                timeDisplay.textContent = time;
+                if (time <= 0) {
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        // Function to end the game
+        async function endGame() {
+            isGameRunning = false;
+            clearInterval(gameInterval);
+            clearTimeout(moleTimeout); // Clear any pending mole pop-up
+            startButton.disabled = false;
+            resetButton.disabled = true;
+            factButton.disabled = false; // Enable fact button after game
+            strategyButton.disabled = false; // Enable strategy button after game
+
+            // Remove all moles from the board
+            document.querySelectorAll('.mole').forEach(mole => mole.remove());
+
+            // Show game over message
+            messageTitle.textContent = 'Game Over!';
+            messageText.innerHTML = `Your final score is: ${score}<br><br><span class="spinner"></span> Generating a message...`;
+            messageBox.classList.add('show');
+            moleReactionDisplay.classList.remove('show'); // Hide any lingering reaction
+
+            // Generate LLM message
+            await generateGameOverMessage(score);
+        }
+
+        // Function to reset the game (without showing game over message)
+        function resetGame() {
+            endGame(); // Stop current game
+            score = 0;
+            time = 30;
+            scoreDisplay.textContent = score;
+            timeDisplay.textContent = time;
+            startButton.disabled = false;
+            resetButton.disabled = true;
+            factButton.disabled = false; // Enable fact button
+            strategyButton.disabled = false; // Enable strategy button
+            messageBox.classList.remove('show'); // Ensure message box is hidden
+            moleReactionDisplay.classList.remove('show'); // Hide any lingering reaction
+            document.querySelectorAll('.mole').forEach(mole => mole.remove()); // Clear any remaining moles
+        }
+
+        // Function to generate a game over message using Gemini API
+        async function generateGameOverMessage(finalScore) {
+            if (isFetchingLLM) return;
+            isFetchingLLM = true;
+
+            try {
+                let prompt;
+                if (finalScore < 5) {
+                    prompt = `The player scored ${finalScore} in Whack-A-Mole. Give a short, funny, and encouraging message about their performance.`;
+                } else if (finalScore >= 5 && finalScore < 15) {
+                    prompt = `The player scored ${finalScore} in Whack-A-Mole. Give a short, positive message about their decent performance.`;
+                } else {
+                    prompt = `The player scored ${finalScore} in Whack-A-Mole. Give a short, congratulatory message about their excellent performance!`;
+                }
+
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = ""; // Canvas will automatically provide this at runtime
+
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    messageText.innerHTML = `Your final score is: ${finalScore}<br><br>${text}`;
+                } else {
+                    messageText.innerHTML = `Your final score is: ${finalScore}<br><br>Couldn't generate a message. Try again!`;
+                    console.error('Unexpected API response structure for game over message:', result);
+                }
+            } catch (error) {
+                console.error("Error generating game over message:", error);
+                messageText.innerHTML = `Your final score is: ${finalScore}<br><br>Error generating message.`;
+            } finally {
+                isFetchingLLM = false;
+            }
+        }
+
+        // Function to fetch a random game fact using Gemini API
+        async function fetchGameFact() {
+            if (isFetchingLLM) return;
+            isFetchingLLM = true;
+            factButton.disabled = true; // Disable button while fetching
+            strategyButton.disabled = true; // Also disable strategy button
+
+            messageTitle.textContent = 'Game Fact';
+            messageText.innerHTML = '<span class="spinner"></span> Fetching a fun fact...';
+            messageBox.classList.add('show');
+
+            try {
+                const prompt = "Give me one short, interesting, and lesser-known random fact about video games, classic arcade games, or animals commonly found in games (like moles!). Make it concise and engaging.";
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = ""; // Canvas will automatically provide this at runtime
+
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    messageText.innerHTML = text;
+                } else {
+                    messageText.innerHTML = 'Failed to fetch a fact. Please try again.';
+                    console.error('Unexpected API response structure for game fact:', result);
+                }
+            } catch (error) {
+                console.error("Error fetching game fact:", error);
+                messageText.innerHTML = 'Failed to load fact. Check console for details.';
+            } finally {
+                isFetchingLLM = false;
+                if (!isGameRunning) { // Only re-enable if game is not running
+                    factButton.disabled = false;
+                    strategyButton.disabled = false;
+                }
+            }
+        }
+
+        // Function to generate a mole reaction using Gemini API
+        async function displayMoleReaction(moleEmoji) {
+            // Only generate reaction if not already fetching another LLM response
+            if (isFetchingLLM) return;
+            isFetchingLLM = true;
+
+            moleReactionDisplay.textContent = '...'; // Show a loading indicator
+            moleReactionDisplay.classList.add('show'); // Make it visible
+
+            try {
+                const prompt = `Generate a very short, funny, one-liner reaction from a ${moleEmoji} that just got whacked. Keep it to 5-10 words.`;
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = "";
+
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    moleReactionDisplay.textContent = text;
+                } else {
+                    moleReactionDisplay.textContent = 'Ouch!'; // Default reaction
+                    console.error('Unexpected API response structure for mole reaction:', result);
+                }
+            } catch (error) {
+                console.error("Error generating mole reaction:", error);
+                moleReactionDisplay.textContent = 'Missed me... kinda!'; // Default reaction on error
+            } finally {
+                isFetchingLLM = false;
+                setTimeout(() => {
+                    moleReactionDisplay.classList.remove('show'); // Hide after a delay
+                }, 2500); // Display for 2.5 seconds
+            }
+        }
+
+        // Function to fetch a game strategy tip using Gemini API
+        async function fetchStrategyTip() {
+            if (isFetchingLLM) return;
+            isFetchingLLM = true;
+            factButton.disabled = true; // Disable other LLM buttons
+            strategyButton.disabled = true;
+
+            messageTitle.textContent = 'Game Strategy Tip';
+            messageText.innerHTML = '<span class="spinner"></span> Thinking of a tip...';
+            messageBox.classList.add('show');
+
+            try {
+                const prompt = "Provide a concise, helpful strategy tip for playing the Whack-A-Mole game. Focus on improving score or reaction time.";
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = "";
+
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    messageText.innerHTML = text;
+                } else {
+                    messageText.innerHTML = 'Failed to get a tip. Please try again.';
+                    console.error('Unexpected API response structure for strategy tip:', result);
+                }
+            } catch (error) {
+                console.error("Error fetching strategy tip:", error);
+                messageText.innerHTML = 'Failed to load tip. Check console for details.';
+            } finally {
+                isFetchingLLM = false;
+                if (!isGameRunning) { // Only re-enable if game is not running
+                    factButton.disabled = false;
+                    strategyButton.disabled = false;
+                }
+            }
+        }
+
+
+        // Event Listeners
+        startButton.addEventListener('click', startGame);
+        resetButton.addEventListener('click', resetGame);
+        playAgainButton.addEventListener('click', startGame);
+        closeMessageButton.addEventListener('click', () => messageBox.classList.remove('show'));
+        factButton.addEventListener('click', fetchGameFact);
+        strategyButton.addEventListener('click', fetchStrategyTip); // Event listener for new button
+
+        // Initial setup
+        window.onload = function() {
+            createHoles(); // Create holes when the page loads
+        };
+    </script>
+</body>
+</html>
